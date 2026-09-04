@@ -945,11 +945,11 @@ function DocumentForm({type,userId,say}:{type:"estimate"|"transaction";userId:st
   const save=async(form:FormData)=>{
     const company=String(form.get("company")||"").trim(),itemName=String(form.get("item_name")||"").trim();
     if(!company||!itemName){say("거래처와 품목을 입력해주세요");return}
-    const{error}=await supabase.from("business_documents").insert({document_type:type,company,recipient_email:String(form.get("email")||"").trim(),item_name:itemName,quantity:Number(form.get("quantity")||1),unit_price:Number(form.get("unit_price")||0),memo:String(form.get("memo")||"").trim(),created_by:userId});
+    const{error}=await supabase.from("business_documents").insert({document_type:type,company,recipient_email:String(form.get("email")||"").trim(),item_name:itemName,model_name:String(form.get("model_name")||"").trim(),quantity:Number(form.get("quantity")||1),unit_price:Number(form.get("unit_price")||0),memo:String(form.get("memo")||"").trim(),created_by:userId});
     if(error){say(`${label}를 저장하지 못했습니다`);return}
     setSaved(true);say(`${label}가 저장됐습니다`);
   };
-  return <form action={save} className="mt-5 space-y-4"><Box t={`${label} 작성`}><Field n="company" l="거래처 *" p="예: 한강센트럴자이"/><Field n="email" l="받는 사람 이메일" p="example@company.com"/><Field n="item_name" l="품목 / 작업내용 *" p="예: 런닝머신 벨트 교체"/><Field n="quantity" l="수량" p="1"/><Field n="unit_price" l="단가" p="0"/><label className="block text-sm font-bold">비고<textarea name="memo" rows={3} className="input resize-none" placeholder="추가 내용을 입력하세요"/></label></Box><button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">{label} 저장</button>{saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}</form>;
+  return <form action={save} className="mt-5 space-y-4"><Box t={`${label} 작성`}><Field n="company" l="거래처 *" p="예: 한강센트럴자이"/><Field n="email" l="받는 사람 이메일" p="example@company.com"/><Field n="item_name" l="품목 *" p="예: 런닝머신 벨트"/><Field n="model_name" l="모델명" p="예: DRAX DX-3000"/><Field n="quantity" l="수량" p="1"/><Field n="unit_price" l="단가" p="0"/><label className="block text-sm font-bold">비고<textarea name="memo" rows={3} className="input resize-none" placeholder="추가 내용을 입력하세요"/></label></Box><button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">{label} 저장</button>{saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}</form>;
 }
 function MailForm({say}:{say:(s:string)=>void}) {
   const send=async(form:FormData)=>{
