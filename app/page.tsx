@@ -941,15 +941,68 @@ function Photos({ say }: { say: (s: string) => void }) {
 }
 function DocumentForm({type,userId,say}:{type:"estimate"|"transaction";userId:string;say:(s:string)=>void}) {
   const [saved,setSaved]=useState(false);
+  const [issuer,setIssuer]=useState<"하진"|"렉스코">("하진");
+  const [items,setItems]=useState([{item_name:"",model_name:"",quantity:"1",unit_price:"",memo:""}]);
   const label=type==="estimate"?"견적서":"거래명세서";
   const save=async(form:FormData)=>{
-    const company=String(form.get("company")||"").trim(),itemName=String(form.get("item_name")||"").trim();
+    const company=String(form.get("company")||"").trim(),itemName=String(form.getAll("item_name")[0]||"").trim();
     if(!company||!itemName){say("거래처와 품목을 입력해주세요");return}
-    const{error}=await supabase.from("business_documents").insert({document_type:type,company,recipient_email:String(form.get("email")||"").trim(),item_name:itemName,model_name:String(form.get("model_name")||"").trim(),quantity:Number(form.get("quantity")||1),unit_price:Number(form.get("unit_price")||0),memo:String(form.get("memo")||"").trim(),created_by:userId});
+    const itemNames=form.getAll("item_name");
+    const modelNames=form.getAll("model_name");
+    const quantities=form.getAll("quantity");
+    const unitPrices=form.getAll("unit_price");
+    const itemMemos=form.getAll("item_memo");
+    const rows=itemNames.map((name,index)=>({
+      document_type:type,
+      company,
+      recipient_email:String(form.get("email")||"").trim(),
+      item_name:String(name).trim(),
+      model_name:String(modelNames[index]||"").trim(),
+      quantity:Number(quantities[index]||1),
+      unit_price:Number(unitPrices[index]||0),
+      memo:[String(itemMemos[index]||"").trim(),String(form.get("memo")||"").trim()].filter(Boolean).join(" / "),
+      created_by:userId,
+    })).filter(row=>row.item_name);
+    const{error}=await supabase.from("business_documents").insert(rows);
     if(error){say(`${label}를 저장하지 못했습니다`);return}
     setSaved(true);say(`${label}가 저장됐습니다`);
   };
-  return <form action={save} className="mt-5 space-y-4"><Box t={`${label} 작성`}><Field n="company" l="거래처 *" p="예: 한강센트럴자이"/><Field n="email" l="받는 사람 이메일" p="example@company.com"/><Field n="item_name" l="품목 *" p="예: 런닝머신 벨트"/><Field n="model_name" l="모델명" p="예: DRAX DX-3000"/><Field n="quantity" l="수량" p="1"/><Field n="unit_price" l="단가" p="0"/><label className="block text-sm font-bold">비고<textarea name="memo" rows={3} className="input resize-none" placeholder="추가 내용을 입력하세요"/></label></Box><button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">{label} 저장</button>{saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}</form>;
+  if(type==="transaction") return <form action={save} className="mt-5 space-y-4"><Box t={`${label} 작성`}><Field n="company" l="거래처 *" p="예: 한강센트럴자이"/><Field n="email" l="받는 사람 이메일" p="example@company.com"/><Field n="item_name" l="품목 *" p="예: 런닝머신 벨트"/><Field n="model_name" l="모델명" p="예: DRAX DX-3000"/><Field n="quantity" l="수량" p="1"/><Field n="unit_price" l="단가" p="0"/><label className="block text-sm font-bold">비고<textarea name="memo" rows={3} className="input resize-none" placeholder="추가 내용을 입력하세요"/></label></Box><button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">{label} 저장</button>{saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}</form>;
+
+  const changeItem=(index:number,key:string,value:string)=>setItems(current=>current.map((item,i)=>i===index?{...item,[key]:value}:item));
+  const supply=items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unit_price)||0),0);
+  const tax=Math.round(supply*.1);
+  const inputClass="input !mt-0";
+  return <form action={save} className="mt-5 space-y-4">
+    <Box t="발행 회사">
+      <div className="grid grid-cols-2 gap-3">
+        {(["하진","렉스코"] as const).map(name=><button key={name} type="button" onClick={()=>setIssuer(name)} className={`rounded-2xl border p-4 text-left ${issuer===name?"border-2 border-blue-600 bg-blue-50":"border-slate-200 bg-white"}`}><b className="block text-sm">{name}</b><small className="mt-2 block text-xs text-slate-500">{name==="하진"?"532-07-02348":"236-09-02463"}</small></button>)}
+      </div>
+    </Box>
+    <Box t="받는 곳">
+      <label className="block text-sm font-bold">견적일<input name="estimate_date" type="date" defaultValue={new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Seoul"}).format(new Date())} className={inputClass}/></label>
+      <Field n="company" l="거래처 *" p="예: 별내 동익미라벨 39단지"/>
+      <div className="grid grid-cols-2 gap-3"><Field n="manager" l="담당자" p="담당자명"/><Field n="phone" l="연락처" p="010-0000-0000"/></div>
+    </Box>
+    <section className="space-y-4 rounded-3xl bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between"><h2 className="font-black">견적 품목</h2><button type="button" onClick={()=>setItems(current=>[...current,{item_name:"",model_name:"",quantity:"1",unit_price:"",memo:""}])} className="rounded-full bg-blue-50 px-4 py-2 text-sm font-black text-blue-700"><Plus className="mr-1 inline" size={17}/>품목 추가</button></div>
+      {items.map((item,index)=><div key={index} className="space-y-4 rounded-3xl border border-slate-200 p-4">
+        <div className="flex items-center justify-between"><h3 className="font-black">품목 {index+1}</h3>{index>0&&<button type="button" onClick={()=>setItems(current=>current.filter((_,i)=>i!==index))} className="text-xs font-bold text-red-500">삭제</button>}</div>
+        <label className="block text-sm font-bold">품목 *<input name="item_name" value={item.item_name} onChange={e=>changeItem(index,"item_name",e.target.value)} className={inputClass} placeholder="예: 런닝머신 벨트"/></label>
+        <label className="block text-sm font-bold">모델명<input name="model_name" value={item.model_name} onChange={e=>changeItem(index,"model_name",e.target.value)} className={inputClass} placeholder="예: DRAX DX-3000"/></label>
+        <label className="block text-sm font-bold">수량<input name="quantity" type="number" min="1" value={item.quantity} onChange={e=>changeItem(index,"quantity",e.target.value)} className={inputClass} placeholder="1"/></label>
+        <label className="block text-sm font-bold">단가<input name="unit_price" type="number" min="0" value={item.unit_price} onChange={e=>changeItem(index,"unit_price",e.target.value)} className={inputClass} placeholder="0"/></label>
+        <label className="block text-sm font-bold">비고<textarea name="item_memo" rows={3} value={item.memo} onChange={e=>changeItem(index,"memo",e.target.value)} className={`${inputClass} resize-none`} placeholder="추가 내용을 입력하세요"/></label>
+        <p className="text-right font-black">{((Number(item.quantity)||0)*(Number(item.unit_price)||0)).toLocaleString()}원</p>
+      </div>)}
+    </section>
+    <Box t="합계 및 비고">
+      <div className="rounded-2xl bg-slate-50 p-4 text-sm"><p className="flex justify-between"><span>공급가액</span><b>{supply.toLocaleString()}원</b></p><p className="mt-2 flex justify-between"><span>부가세</span><b>{tax.toLocaleString()}원</b></p><p className="mt-3 flex justify-between border-t border-slate-400 pt-3 text-base font-black"><span>총 견적금액</span><span className="text-blue-700">{(supply+tax).toLocaleString()}원</span></p></div>
+      <textarea name="memo" rows={4} className="input resize-none" placeholder="비고"/>
+    </Box>
+    <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">견적서 저장</button>
+    {saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}
+  </form>;
 }
 function MailForm({say}:{say:(s:string)=>void}) {
   const send=async(form:FormData)=>{
