@@ -742,11 +742,24 @@ function Empty({ text }: { text: string }) {
   );
 }
 function Register({ add }: { add: (f: FormData) => Promise<void> }) {
+  const [companyChoice,setCompanyChoice]=useState("");
+  const [otherCompany,setOtherCompany]=useState("");
   return (
     <form action={add} className="mt-5 space-y-4">
       <Box t="고객 정보">
-        <Field n="company" l="고객사 *" p="예: 한강센트럴자이" />
-        <Field n="site" l="현장 위치" p="예: 커뮤니티센터 2층" />
+        <label className="block text-sm font-bold">
+          고객사 *
+          <select value={companyChoice} onChange={(e)=>setCompanyChoice(e.target.value)} className="input appearance-none">
+            <option value="">고객사를 선택하세요</option>
+            <option value="하진">하진</option>
+            <option value="렉스코">렉스코</option>
+            <option value="디랙스">디랙스</option>
+            <option value="기타">기타</option>
+          </select>
+          <input type="hidden" name="company" value={companyChoice==="기타"?otherCompany:companyChoice}/>
+        </label>
+        {companyChoice==="기타"&&<label className="block text-sm font-bold">기타 고객사 *<input value={otherCompany} onChange={(e)=>setOtherCompany(e.target.value)} placeholder="고객사명을 입력하세요" className="input"/></label>}
+        <Field n="site" l="현장 위치" p="예: 한강센트럴자이 커뮤니티센터 2층" />
         <Field n="phone" l="연락처" p="010-0000-0000" />
       </Box>
       <Box t="장비 및 증상">
