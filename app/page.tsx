@@ -827,8 +827,8 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
   while(cells.length%7) cells.push(null);
   const weekCount=cells.length/7;
-  const fitZoom=Math.min(1,Math.max(0.3,Number(Math.min((viewport.width-12)/980,(viewport.height-105)/(weekCount*190)).toFixed(2))));
-  const weekHeight=Math.max(190,Math.floor((viewport.height-105)/(calendarZoom*weekCount)));
+  const fitZoom=Math.min(1,Math.max(0.3,Number(Math.min((viewport.width-12)/980,(viewport.height-130)/(weekCount*190)).toFixed(2))));
+  const weekHeight=Math.max(190,Math.floor((viewport.height-130)/(calendarZoom*weekCount)));
   const schedules=jobs.map(job=>({job,schedule:scheduleOf(job.date)}));
   const monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
   const moveMonth=(amount:number)=>{
@@ -863,18 +863,12 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   useEffect(()=>setCalendarZoom(fitZoom),[fitZoom]);
   useEffect(()=>{
     let meta=document.querySelector('meta[name="viewport"]') as HTMLMetaElement|null;
-    const created=!meta;
     if(!meta){
       meta=document.createElement("meta");
       meta.name="viewport";
       document.head.appendChild(meta);
     }
-    const original=meta.content;
     meta.content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no";
-    return ()=>{
-      if(created) meta?.remove();
-      else if(meta) meta.content=original;
-    };
   },[]);
   const returnHome=()=>{
     pinchDistance.current=null;
@@ -895,6 +889,9 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
     </div>
     <div onTouchStart={startPinch} onTouchMove={movePinch} onTouchEnd={endPinch} className="overflow-auto rounded-[28px] bg-gradient-to-br from-blue-50 via-white to-slate-100 p-1 shadow-lg" style={{touchAction:"pan-x pan-y"}}>
       <div className="w-[980px] origin-top-left p-2" style={{zoom:calendarZoom} as React.CSSProperties}>
+        <div className="mb-2 grid grid-cols-7 gap-2 px-1 text-center text-[24px] font-black">
+          {weekdays.map((weekday,index)=><span key={weekday} className={`py-2 ${index===0?"text-rose-500":index===6?"text-blue-500":"text-slate-500"}`}>{weekday}</span>)}
+        </div>
         {Array.from({length:cells.length/7},(_,week)=>{
           const weekCells=cells.slice(week*7,week*7+7);
           return <div key={week} className="mb-2 grid grid-cols-7 gap-2 last:mb-0">
@@ -905,15 +902,14 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
               return <div key={dateKey} style={{minHeight:weekHeight}} className={`overflow-hidden rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
-                <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2.5 text-center font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-950"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
-                  <span className="block text-[32px] font-black leading-none tracking-tight">{month}/{day}</span>
-                  <span className="mt-1 block text-[22px] font-black leading-none">{weekdays[column]}</span>
-                  {holiday&&<span className="mt-1.5 block truncate text-[18px] font-black leading-none">{holiday}</span>}
+                <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2 text-center font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
+                  <span className="block text-[22px] font-black leading-none">{day}</span>
+                  {holiday&&<span className="mt-1 block truncate text-[14px] font-black leading-none">{holiday}</span>}
                 </div>
-                <div className="space-y-1 p-1.5">
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-[3px] px-2 py-1.5 text-left text-[10px] font-bold leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
+                <div className="space-y-2 p-2">
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-xl border-l-4 px-3 py-2.5 text-left text-[20px] font-black leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{schedule.time} · {job.site||"장소 미입력"}</span>
-                    <span className="mt-0.5 block text-[9px] font-medium text-slate-500">{job.worker||"기사 미배정"}</span>
+                    <span className="mt-1 block text-[16px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
                 </div>
               </div>;
