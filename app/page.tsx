@@ -149,6 +149,10 @@ const displayTime=(time:string)=>{
   const minute=Number(match[2]);
   return minute===0?`${hour}시`:`${hour}시${minute}분`;
 };
+const timeOrder=(time:string)=>{
+  const match=time.match(/^(\d{1,2}):(\d{2})$/);
+  return match?Number(match[1])*60+Number(match[2]):Number.MAX_SAFE_INTEGER;
+};
 
 const holidayCache=new Map<number,Record<string,string>>();
 const dateKeyOf=(date:Date)=>date.toISOString().slice(0,10);
@@ -438,14 +442,24 @@ export default function Page() {
       <div className={`mx-auto min-h-screen bg-[#f8fafc] shadow-2xl ${view === "calendar" ? "max-w-3xl" : "max-w-md"}`}>
         {view !== "calendar" && <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-[#df3548] font-black text-white">
-              H
-            </div>
+            {view === "home" ? (
+              <div className="relative size-10 shrink-0 overflow-hidden rounded-xl bg-[#cbb0e3] shadow-sm ring-1 ring-slate-200">
+                <img
+                  src="/hajin-logo.jpg"
+                  alt="HAJIN"
+                  className="absolute left-1/2 top-1/2 h-[52px] max-w-none -translate-x-1/2 -translate-y-[61%]"
+                />
+              </div>
+            ) : (
+              <div className="grid size-10 place-items-center rounded-xl bg-[#df3548] font-black text-white">
+                H
+              </div>
+            )}
             <div>
               <h1 className="text-lg font-black">
                 {
                   {
-                    home: "하진 A/S",
+                    home: "하진그룹",
                     calendar: "월간 A/S 일정",
                     register: "A/S 접수 등록",
                     progress: "작업 이력",
@@ -688,7 +702,7 @@ function Dashboard({
   open: (j: Job) => void;
 }) {
   const todayKey = koreaDateKey();
-  const [proposalOpen,setProposalOpen]=useState(false);
+  const [openOffice,setOpenOffice]=useState<string | null>(null);
   const nums = [
     [
       "오늘 방문",
@@ -709,6 +723,23 @@ function Dashboard({
       "bg-amber-50 text-amber-700",
     ],
   ] as const;
+  const officeFolders: Array<{
+    key:string;
+    label:string;
+    icon:typeof FileText;
+    color:string;
+    iconColor:string;
+    children:Array<{label:string;view?:View}>;
+  }> = [
+    { key:"estimate", label:"견적서", icon:FileText, color:"bg-blue-50 text-blue-700", iconColor:"bg-blue-600 text-white", children:[{label:"새 견적서 작성",view:"estimate" as View},{label:"작성한 견적서 보기",view:"estimateList" as View}] },
+    { key:"transaction", label:"거래명세서", icon:ReceiptText, color:"bg-violet-50 text-violet-700", iconColor:"bg-violet-600 text-white", children:[{label:"거래명세서 작성",view:"transaction" as View},{label:"작성한 거래명세서 보기"}] },
+    { key:"proposal", label:"제안서", icon:FileSignature, color:"bg-rose-50 text-rose-700", iconColor:"bg-rose-600 text-white", children:[{label:"새 제안서 작성",view:"proposal" as View},{label:"작성한 제안서 보기",view:"proposalList" as View}] },
+    { key:"contract", label:"계약서", icon:FileText, color:"bg-cyan-50 text-cyan-700", iconColor:"bg-cyan-600 text-white", children:[{label:"새 계약서 작성"},{label:"작성한 계약서 보기"}] },
+    { key:"spec", label:"사양서", icon:FileCog, color:"bg-amber-50 text-amber-700", iconColor:"bg-amber-500 text-white", children:[{label:"새 사양서 작성"},{label:"작성한 사양서 보기"}] },
+    { key:"opinion", label:"소견서", icon:ClipboardPenLine, color:"bg-orange-50 text-orange-700", iconColor:"bg-orange-500 text-white", children:[{label:"새 소견서 작성"},{label:"작성한 소견서 보기"}] },
+    { key:"inventory", label:"재고관리", icon:Warehouse, color:"bg-emerald-50 text-emerald-700", iconColor:"bg-emerald-600 text-white", children:[{label:"재고 수량 확보 및 발주"},{label:"렉스코"},{label:"디랙스"}] },
+    { key:"sales", label:"매출매입관리", icon:CircleDollarSign, color:"bg-indigo-50 text-indigo-700", iconColor:"bg-indigo-600 text-white", children:[{label:"매출 관리"},{label:"매입 관리"},{label:"입금·미수 확인"}] },
+  ];
   return (
     <>
       <section className="mt-5 rounded-[28px] bg-gradient-to-br from-[#173f82] to-[#2774d7] p-5 text-white shadow-lg shadow-blue-900/15">
@@ -754,47 +785,39 @@ function Dashboard({
       <MonthlyCalendar jobs={jobs} open={open} expand={() => setView("calendar")} />
       <Title text="사무 업무" />
       <div className="space-y-3 pb-2">
-        <section className="rounded-[24px] bg-white p-4 shadow-sm">
-          <div className="flex w-full items-center gap-3 rounded-2xl bg-blue-50 p-3 text-left text-blue-800">
-            <span className="grid size-11 place-items-center rounded-xl bg-blue-600 text-white"><FileText size={22} strokeWidth={2.4}/></span>
-            <span className="font-black">견적서</span>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button type="button" onClick={()=>setView("estimate")} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-black text-white">새 견적서 작성</button>
-            <button type="button" onClick={()=>setView("estimateList")} className="rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-black text-blue-700">작성한 견적서 보기</button>
-          </div>
-          <div className="ml-5 border-l-2 border-violet-300 pl-4 pt-3">
-            <div className="flex items-center gap-3 rounded-xl bg-violet-50 p-3 text-violet-800">
-              <ReceiptText size={20}/><b className="text-sm">계산서</b>
-            </div>
-            <div className="ml-5 border-l-2 border-violet-200 pl-4 pt-2">
-              <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm font-bold text-slate-700">
-                <CircleDollarSign size={19} className="text-emerald-600"/>입금 확인 · 미수 확인 처리
-              </div>
-            </div>
-          </div>
-        </section>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm"><span className="grid size-10 place-items-center rounded-xl bg-amber-50 text-amber-600"><FileCog size={21}/></span><b className="text-sm">사양서</b></div>
-          <button type="button" onClick={()=>setProposalOpen(open=>!open)} className={`flex items-center gap-3 rounded-2xl p-4 text-left shadow-sm ${proposalOpen?"bg-rose-600 text-white":"bg-white"}`}><span className={`grid size-10 place-items-center rounded-xl ${proposalOpen?"bg-white/20 text-white":"bg-rose-50 text-rose-600"}`}><FileSignature size={21}/></span><b className="text-sm">제안서</b><ChevronRight className={`ml-auto transition ${proposalOpen?"rotate-90":""}`} size={18}/></button>
-        </div>
-        {proposalOpen&&<div className="grid grid-cols-2 gap-2 rounded-2xl bg-rose-50 p-3 shadow-sm">
-          <button type="button" onClick={()=>setView("proposal")} className="rounded-xl bg-rose-600 px-3 py-3 text-sm font-black text-white">새 제안서 작성</button>
-          <button type="button" onClick={()=>setView("proposalList")} className="rounded-xl border border-rose-200 bg-white px-3 py-3 text-sm font-black text-rose-700">작성한 제안서 보기</button>
-        </div>}
-        <section className="rounded-[24px] bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-3 text-emerald-800">
-            <span className="grid size-11 place-items-center rounded-xl bg-emerald-600 text-white"><Warehouse size={22}/></span>
-            <b>부품 재고관리</b>
-          </div>
-          <div className="ml-5 border-l-2 border-violet-300 pl-4 pt-3">
-            <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm font-bold text-slate-700"><PackageSearch size={20} className="text-blue-600"/>재고 수량 확보 및 발주</div>
-            <div className="ml-5 grid grid-cols-2 gap-2 border-l-2 border-violet-200 pl-4 pt-2">
-              <span className="rounded-xl bg-blue-50 px-3 py-2 text-center text-sm font-black text-blue-700">렉스코</span>
-              <span className="rounded-xl bg-orange-50 px-3 py-2 text-center text-sm font-black text-orange-700">디랙스</span>
-            </div>
-          </div>
-        </section>
+        {(()=>{
+          const contract=officeFolders.find(folder=>folder.key==="contract")!;
+          const ContractIcon=contract.icon;
+          const opened=openOffice==="contract";
+          return <section className="overflow-hidden rounded-[24px] border-2 border-indigo-200 bg-white shadow-md shadow-indigo-900/10">
+            <button type="button" onClick={()=>setOpenOffice(current=>current==="contract"?null:"contract")} className={`flex min-h-[88px] w-full items-center gap-4 p-4 text-left transition ${opened?"bg-gradient-to-r from-indigo-700 to-blue-600 text-white":"bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-950"}`}>
+              <span className={`grid size-12 shrink-0 place-items-center rounded-2xl ${opened?"bg-white/20 text-white":"bg-indigo-600 text-white"}`}><ContractIcon size={25}/></span>
+              <span className="min-w-0 flex-1">
+                <span className={`mb-1 block text-[11px] font-black tracking-wide ${opened?"text-indigo-100":"text-indigo-600"}`}>중요 계약 문서</span>
+                <b className="text-lg font-black">계약서</b>
+              </span>
+              <span className={`rounded-full px-3 py-1 text-xs font-black ${opened?"bg-white/20 text-white":"bg-white text-indigo-700 shadow-sm"}`}>필수</span>
+              <ChevronRight className={`shrink-0 transition ${opened?"rotate-90":""}`} size={20}/>
+            </button>
+            {opened&&<div className="grid grid-cols-2 gap-2 bg-indigo-50 p-3">
+              {contract.children.map(child=><button key={child.label} type="button" onClick={()=>child.view&&setView(child.view)} className="min-h-[50px] rounded-xl border border-indigo-100 bg-white px-3 py-3 text-sm font-black text-indigo-800 shadow-sm">{child.label}</button>)}
+            </div>}
+          </section>;
+        })()}
+        {[0,2,4,6].map(start=>{
+          const row=officeFolders.filter(folder=>folder.key!=="contract").slice(start,start+2);
+          const opened=row.find(folder=>folder.key===openOffice);
+          return <div key={start} className="grid grid-cols-2 gap-3">
+            {row.map(({key,label,icon:Icon,color,iconColor})=><button key={key} type="button" onClick={()=>setOpenOffice(current=>current===key?null:key)} className={`flex min-h-[76px] items-center gap-3 rounded-2xl p-4 text-left shadow-sm transition ${row.length===1?"col-span-2":""} ${openOffice===key?color:"bg-white"}`}>
+              <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${openOffice===key?iconColor:color}`}><Icon size={21}/></span>
+              <b className="min-w-0 text-sm leading-tight">{label}</b>
+              <ChevronRight className={`ml-auto shrink-0 transition ${openOffice===key?"rotate-90":""}`} size={17}/>
+            </button>)}
+            {opened&&<div className={`col-span-2 grid ${opened.children.length===3?"grid-cols-3":"grid-cols-2"} gap-2 rounded-2xl p-3 shadow-sm ${opened.color}`}>
+              {opened.children.map(child=><button key={child.label} type="button" onClick={()=>child.view&&setView(child.view)} className="min-h-[48px] rounded-xl border border-white/70 bg-white px-2 py-3 text-xs font-black text-slate-700 shadow-sm">{child.label}</button>)}
+            </div>}
+          </div>;
+        })}
       </div>
     </>
   );
@@ -905,7 +928,14 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
             {weekCells.map((day,column)=>{
               if(!day) return <div key={`empty-${week}-${column}`} style={{minHeight:weekHeight}} className="rounded-2xl border border-white/70 bg-white/40"/>;
               const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
-              const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
+              const dayJobs=schedules
+                .filter(({schedule})=>schedule.dateKey===dateKey)
+                .sort((a,b)=>{
+                  const aDone=a.job.status==="처리완료";
+                  const bDone=b.job.status==="처리완료";
+                  if(aDone!==bDone) return aDone?1:-1;
+                  return timeOrder(a.schedule.time)-timeOrder(b.schedule.time);
+                });
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
               return <div key={dateKey} style={{minHeight:weekHeight}} className={`min-w-0 rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
@@ -914,9 +944,9 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
                   {holiday&&<span className="mt-1 block truncate text-[14px] font-black leading-none">{holiday}</span>}
                 </div>
                 <div className="space-y-1 p-1.5">
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-2 py-1.5 text-left text-[16px] font-black leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-2 py-1.5 text-left text-[13px] font-black leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{displayTime(schedule.time)} · {job.site||"장소 미입력"}</span>
-                    <span className="mt-0.5 block text-[13px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
+                    <span className="mt-0.5 block text-[11px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
                 </div>
               </div>;
