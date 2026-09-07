@@ -7,9 +7,11 @@ import {
   Camera,
   ChevronRight,
   ClipboardList,
+  ClipboardPenLine,
   Eye,
   EyeOff,
   FileText,
+  History,
   Home,
   LockKeyhole,
   LogOut,
@@ -420,7 +422,7 @@ export default function Page() {
                     home: "하진 A/S",
                     calendar: "월간 A/S 일정",
                     register: "A/S 접수 등록",
-                    progress: "진행 상황",
+                    progress: "작업 이력",
                     photos: "작업 사진",
                     detail: "A/S 상세",
                     estimate: "견적서",
@@ -693,7 +695,7 @@ function Dashboard({
           onClick={() => setView("progress")}
           className="mt-5 flex w-full justify-between rounded-2xl bg-white/15 px-4 py-3 text-sm font-bold"
         >
-          전체 진행 상황 보기 <ChevronRight size={18} />
+          전체 작업 이력 보기 <ChevronRight size={18} />
         </button>
       </section>
       <section className="mt-4 grid grid-cols-3 gap-3">
@@ -738,46 +740,24 @@ function Dashboard({
   );
 }
 
-function MonthlyCalendar({jobs,open,expand}:{jobs:Job[];open:(j:Job)=>void;expand:()=>void}) {
+function MonthlyCalendar({jobs,expand}:{jobs:Job[];open:(j:Job)=>void;expand:()=>void}) {
   const todayKey=koreaDateKey();
   const [year,month]=todayKey.split("-").map(Number);
-  const firstDay=new Date(year,month-1,1).getDay();
-  const lastDate=new Date(year,month,0).getDate();
-  const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
-  while(cells.length%7) cells.push(null);
   const jobsWithSchedule=jobs.map(job=>({job,schedule:scheduleOf(job.date)}));
   const monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
   const monthJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey.startsWith(monthPrefix));
-  return <>
-    <div className="mb-3 mt-7 flex items-center justify-between">
-      <button type="button" onClick={expand} className="flex items-center gap-1 text-left text-lg font-black">
-        {year}년 {month}월 일정 <ChevronRight size={20}/>
-      </button>
-      <button type="button" onClick={expand} className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700">크게 보기</button>
+  return <button type="button" onClick={expand} className="mt-7 flex w-full items-center justify-between overflow-hidden rounded-[26px] bg-gradient-to-r from-[#174b91] to-[#2878d5] p-5 text-left text-white shadow-lg shadow-blue-900/15">
+    <div className="flex min-w-0 items-center gap-4">
+      <div className="grid size-14 shrink-0 place-items-center rounded-2xl bg-white/15 ring-1 ring-white/20">
+        <CalendarDays size={28}/>
+      </div>
+      <div className="min-w-0">
+        <p className="text-xs font-bold text-blue-100">{year}년 · 등록 일정 {monthJobs.length}건</p>
+        <p className="mt-1 text-xl font-black">{month}월 일정 달력 크게보기</p>
+      </div>
     </div>
-    <section onClick={expand} className="cursor-pointer overflow-hidden rounded-3xl bg-white p-4 shadow-sm" aria-label="월간 달력 크게 보기">
-      <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-400">
-        {["일","월","화","수","목","금","토"].map((day,i)=><span key={day} className={i===0?"text-rose-500":i===6?"text-blue-500":""}>{day}</span>)}
-      </div>
-      <div className="mt-2 grid grid-cols-7 gap-1">
-        {cells.map((day,index)=>{
-          if(!day) return <span key={`empty-${index}`} className="min-h-32"/>;
-          const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
-          const dayJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey===dateKey);
-          const today=dateKey===todayKey;
-          const holiday=holidayOf(dateKey);
-          return <div key={dateKey} className={`min-h-32 min-w-0 rounded-xl border px-1 py-1.5 align-top shadow-sm ${today?"border-blue-500 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-100 bg-white"}`}>
-            <span style={holiday&&!today?{color:"#dc2626"}:undefined} className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":holiday||index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
-            {holiday&&<span style={{color:"#dc2626"}} className="block truncate text-center text-[7px] font-black">{holiday}</span>}
-            {dayJobs.slice(0,5).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-0.5 block w-full min-w-0 rounded px-0.5 py-1 text-center leading-none ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
-              <span className="block truncate text-[8px] font-black">{job.worker||"미배정"}</span>
-            </button>)}
-            {dayJobs.length>5&&<span className="mt-0.5 block text-center text-[8px] font-black text-slate-500">외 {dayJobs.length-5}건</span>}
-          </div>;
-        })}
-      </div>
-    </section>
-  </>;
+    <ChevronRight className="shrink-0" size={24}/>
+  </button>;
 }
 
 function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:()=>void}) {
@@ -1231,16 +1211,18 @@ function Nav({ view, setView }: { view: View; setView: (v: View) => void }) {
     <nav className="fixed bottom-0 left-1/2 z-30 flex w-full max-w-md -translate-x-1/2 justify-around border-t bg-white px-2 pb-3 pt-2">
       {[
         [Home, "홈", "home"],
-        [Plus, "접수 등록", "register"],
-        [ClipboardList, "진행 상황", "progress"],
-        [Camera, "작업 사진", "photos"],
+        [ClipboardPenLine, "접수 등록", "register"],
+        [Mail, "메일 보내기", "mail"],
+        [History, "작업 이력", "progress"],
       ].map(([I, t, v]: any) => (
         <button
           key={t}
           onClick={() => setView(v)}
-          className={`flex min-w-18 flex-col items-center gap-1 py-2 text-[11px] font-bold ${view === v ? "text-blue-700" : "text-slate-400"}`}
+          className={`flex min-w-18 flex-col items-center gap-1.5 py-1 text-xs font-black ${view === v ? "text-blue-700" : "text-slate-600"}`}
         >
-          <I size={21} />
+          <span className={`grid size-10 place-items-center rounded-xl transition ${view === v ? "scale-105 bg-gradient-to-br from-[#1553aa] to-[#2879df] text-white shadow-lg shadow-blue-600/25" : "bg-blue-50 text-[#1d63b7]"}`}>
+            <I size={22} strokeWidth={2.5} />
+          </span>
           {t}
         </button>
       ))}
