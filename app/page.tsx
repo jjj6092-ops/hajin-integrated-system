@@ -5,9 +5,9 @@ import {
   Bell,
   CalendarDays,
   Camera,
-  CheckCircle2,
   ChevronRight,
   ClipboardList,
+  Clock3,
   Eye,
   EyeOff,
   FileText,
@@ -15,6 +15,7 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
+  MapPin,
   Package,
   Plus,
   Search,
@@ -94,6 +95,32 @@ const toJob = (r: JobRow): Job => {
     resolution: r.resolution,
     createdAt: r.created_at,
   };
+};
+
+const koreaDateKey = (date = new Date()) =>
+  new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+
+const scheduleOf = (note: string) => {
+  const value = note.trim();
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]\s*(\d{1,2}:\d{2}))?/);
+  if (iso) return { dateKey: `${iso[1]}-${iso[2]}-${iso[3]}`, time: iso[4] || "시간 미정" };
+  const dotted = value.match(/^(\d{4})[.\/-]\s*(\d{1,2})[.\/-]\s*(\d{1,2})[.]?(?:\s*(\d{1,2}:\d{2}))?/);
+  if (dotted) return { dateKey: `${dotted[1]}-${dotted[2].padStart(2,"0")}-${dotted[3].padStart(2,"0")}`, time: dotted[4] || "시간 미정" };
+  const monthDay = value.match(/^(\d{1,2})월\s*(\d{1,2})일(?:\s*(\d{1,2}:\d{2}))?/);
+  if (monthDay) {
+    const year = koreaDateKey().slice(0, 4);
+    return { dateKey: `${year}-${monthDay[1].padStart(2,"0")}-${monthDay[2].padStart(2,"0")}`, time: monthDay[3] || "시간 미정" };
+  }
+  if (value.includes("오늘")) {
+    const time = value.match(/(\d{1,2}:\d{2})/)?.[1] || "시간 미정";
+    return { dateKey: koreaDateKey(), time };
+  }
+  return { dateKey: "", time: value || "시간 미정" };
 };
 
 export default function Page() {
@@ -233,7 +260,10 @@ export default function Page() {
       site: String(f.get("site") || "").trim(),
       contact_phone: String(f.get("phone") || "").trim(),
       machine: String(f.get("machine") || "").trim(),
-      visit_note: String(f.get("date") || "").trim(),
+      visit_note: [
+        String(f.get("date") || "").trim(),
+        String(f.get("time") || "").trim(),
+      ].filter(Boolean).join(" "),
       worker: String(f.get("worker") || "").trim(),
       status: "접수" as Status,
       created_by: user.id,
@@ -544,10 +574,11 @@ function Dashboard({
   setView: (v: View) => void;
   open: (j: Job) => void;
 }) {
+  const todayKey = koreaDateKey();
   const nums = [
     [
       "오늘 방문",
-      jobs.filter((j) => j.date.includes("오늘")).length,
+      jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey).length,
       CalendarDays,
       "bg-blue-50 text-blue-700",
     ],
@@ -606,48 +637,7 @@ function Dashboard({
           </button>
         ))}
       </section>
-      <Title text="빠른 업무" extra="자주 쓰는 메뉴" />
-      <section className="grid grid-cols-2 gap-3">
-        <Quick
-          t="A/S 접수 등록"
-          d="신규 요청 입력"
-          c="bg-[#ff7a3d]"
-          I={Plus}
-          go={() => setView("register")}
-        />
-        <Quick
-          t="진행 상황"
-          d="접수부터 완료까지"
-          c="bg-[#2563c4]"
-          I={ClipboardList}
-          go={() => setView("progress")}
-        />
-        <Quick
-          t="처리 내역"
-          d="작업 결과 기록"
-          c="bg-[#10a37f]"
-          I={CheckCircle2}
-          go={() => (jobs[0] ? open(jobs[0]) : setView("progress"))}
-        />
-        <Quick
-          t="작업 사진"
-          d="전·후 사진 등록"
-          c="bg-[#7052d6]"
-          I={Camera}
-          go={() => setView("photos")}
-        />
-      </section>
-      <Title text="오늘 방문 예정" extra="전체보기" />
-      <div className="space-y-3">
-        {jobs
-          .filter((j) => j.date.includes("오늘"))
-          .map((j) => (
-            <Card key={j.id} j={j} open={() => open(j)} />
-          ))}
-        {!jobs.some((j) => j.date.includes("오늘")) && (
-          <Empty text="오늘 방문 일정이 없습니다" />
-        )}
-      </div>
+      <MonthlyCalendar jobs={jobs} open={open} />
       <Title text="사무 업무" />
       <div className="flex gap-3 overflow-x-auto pb-2">
         {[
@@ -668,6 +658,55 @@ function Dashboard({
     </>
   );
 }
+
+function MonthlyCalendar({jobs,open}:{jobs:Job[];open:(j:Job)=>void}) {
+  const todayKey=koreaDateKey();
+  const [selectedDate,setSelectedDate]=useState(todayKey);
+  const [year,month]=todayKey.split("-").map(Number);
+  const firstDay=new Date(year,month-1,1).getDay();
+  const lastDate=new Date(year,month,0).getDate();
+  const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
+  while(cells.length%7) cells.push(null);
+  const jobsWithSchedule=jobs.map(job=>({job,schedule:scheduleOf(job.date)}));
+  const monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
+  const monthJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey.startsWith(monthPrefix));
+  const selectedJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey===selectedDate);
+  const selectedDay=Number(selectedDate.slice(-2));
+  return <>
+    <Title text={`${year}년 ${month}월 일정`} extra={`${monthJobs.length}건`}/>
+    <section className="overflow-hidden rounded-3xl bg-white p-4 shadow-sm">
+      <div className="grid grid-cols-7 text-center text-xs font-bold text-slate-400">
+        {["일","월","화","수","목","금","토"].map((day,i)=><span key={day} className={i===0?"text-rose-500":i===6?"text-blue-500":""}>{day}</span>)}
+      </div>
+      <div className="mt-2 grid grid-cols-7 gap-1">
+        {cells.map((day,index)=>{
+          if(!day) return <span key={`empty-${index}`} className="min-h-16"/>;
+          const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
+          const dayJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey===dateKey);
+          const selected=dateKey===selectedDate;
+          const today=dateKey===todayKey;
+          return <button key={dateKey} type="button" onClick={()=>setSelectedDate(dateKey)} className={`min-h-16 rounded-xl border px-1 py-1.5 text-left align-top ${selected?"border-blue-600 bg-blue-50":"border-transparent bg-slate-50"}`}>
+            <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
+            {dayJobs.slice(0,2).map(({job,schedule})=><span key={job.id} className={`mt-1 block truncate rounded px-1 py-0.5 text-[10px] font-bold ${job.status==="처리완료"?"bg-emerald-100 text-emerald-700":"bg-blue-100 text-blue-700"}`}>{job.status==="처리완료"?"(완) ":""}{schedule.time==="시간 미정"?job.company:schedule.time}</span>)}
+            {dayJobs.length>2&&<span className="block text-center text-[10px] font-bold text-slate-400">+{dayJobs.length-2}</span>}
+          </button>;
+        })}
+      </div>
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <h3 className="font-black">{month}월 {selectedDay}일 일정</h3>
+        <div className="mt-3 space-y-2">
+          {selectedJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className="w-full rounded-2xl border border-slate-100 bg-slate-50 p-3 text-left">
+            <div className="flex items-start justify-between gap-2"><b className="text-sm">{job.status==="처리완료"?"(완) ":""}{job.company}</b><span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${badge[job.status]}`}>{job.status}</span></div>
+            <p className="mt-2 flex items-center gap-2 text-sm text-slate-600"><Clock3 size={15}/>{schedule.time}</p>
+            <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><MapPin size={15}/>{job.site||"장소 미입력"}</p>
+            <p className="mt-1 flex items-center gap-2 text-sm text-slate-600"><UserRound size={15}/>{job.worker||"출동기사 미배정"}</p>
+          </button>)}
+          {selectedJobs.length===0&&<p className="rounded-2xl bg-slate-50 px-4 py-5 text-center text-sm font-bold text-slate-400">등록된 일정이 없습니다</p>}
+        </div>
+      </div>
+    </section>
+  </>;
+}
 function Title({ text, extra }: { text: string; extra?: string }) {
   return (
     <div className="mb-3 mt-7 flex items-center justify-between">
@@ -676,36 +715,6 @@ function Title({ text, extra }: { text: string; extra?: string }) {
         <span className="text-xs font-bold text-slate-400">{extra}</span>
       )}
     </div>
-  );
-}
-function Quick({
-  t,
-  d,
-  c,
-  I,
-  go,
-}: {
-  t: string;
-  d: string;
-  c: string;
-  I: any;
-  go: () => void;
-}) {
-  return (
-    <button
-      onClick={go}
-      className="flex items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-sm"
-    >
-      <span
-        className={`grid size-11 shrink-0 place-items-center rounded-2xl text-white ${c}`}
-      >
-        <I size={21} />
-      </span>
-      <span>
-        <b className="block text-sm">{t}</b>
-        <small className="text-xs text-slate-500">{d}</small>
-      </span>
-    </button>
   );
 }
 function Card({ j, open }: { j: Job; open: () => void }) {
@@ -775,8 +784,9 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
         </label>
       </Box>
       <Box t="방문 일정">
-        <Field n="date" l="방문 예정" p="예: 9월 4일 14:00" />
-        <Field n="worker" l="담당 기사" p="예: 우제일" />
+        <label className="block text-sm font-bold">방문 날짜 *<input name="date" type="date" defaultValue={koreaDateKey()} className="input" required/></label>
+        <label className="block text-sm font-bold">방문 시간 *<input name="time" type="time" className="input" required/></label>
+        <Field n="worker" l="출동기사" p="예: 우제일" />
       </Box>
       <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">
         A/S 접수 등록
