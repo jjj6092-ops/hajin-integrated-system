@@ -685,16 +685,16 @@ function MonthlyCalendar({jobs,open,expand}:{jobs:Job[];open:(j:Job)=>void;expan
       </div>
       <div className="mt-2 grid grid-cols-7 gap-1">
         {cells.map((day,index)=>{
-          if(!day) return <span key={`empty-${index}`} className="min-h-20"/>;
+          if(!day) return <span key={`empty-${index}`} className="min-h-32"/>;
           const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
           const dayJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey===dateKey);
           const today=dateKey===todayKey;
-          return <div key={dateKey} className={`min-h-20 min-w-0 rounded-xl border px-1 py-1.5 align-top ${today?"border-blue-500 bg-blue-50":"border-transparent bg-slate-50"}`}>
+          return <div key={dateKey} className={`min-h-32 min-w-0 rounded-xl border px-1 py-1.5 align-top ${today?"border-blue-500 bg-blue-50":"border-transparent bg-slate-50"}`}>
             <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
-            {dayJobs.slice(0,2).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-1 block w-full min-w-0 rounded px-1 py-1.5 text-center leading-tight ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
-              <span className="block truncate text-[9px] font-black">{job.worker||"미배정"}</span>
+            {dayJobs.slice(0,5).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-0.5 block w-full min-w-0 rounded px-0.5 py-1 text-center leading-none ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
+              <span className="block truncate text-[8px] font-black">{job.worker||"미배정"}</span>
             </button>)}
-            {dayJobs.length>2&&<span className="mt-1 block text-center text-[9px] font-black text-slate-500">외 {dayJobs.length-2}건</span>}
+            {dayJobs.length>5&&<span className="mt-0.5 block text-center text-[8px] font-black text-slate-500">외 {dayJobs.length-5}건</span>}
           </div>;
         })}
       </div>
@@ -718,36 +718,40 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
     const nextYear=next.getFullYear(), nextMonth=next.getMonth()+1;
     setYear(nextYear); setMonth(nextMonth);
   };
-  return <section className="min-h-screen py-3">
-    <div className="rounded-[24px] bg-white p-2 shadow-sm sm:p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <button type="button" onClick={close} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
-        <div className="flex items-center gap-2">
-          <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
-          <h2 className="min-w-32 text-center text-xl font-black">{year}년 {month}월</h2>
-          <button type="button" aria-label="다음 달" onClick={()=>moveMonth(1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">›</button>
-        </div>
-        <span className="w-[58px] text-right text-xs font-black text-blue-700">{schedules.filter(({schedule})=>schedule.dateKey.startsWith(monthPrefix)).length}건</span>
+  const weekdays=["일","월","화","수","목","금","토"];
+  return <section className="min-h-screen py-2">
+    <div className="sticky left-0 top-0 z-10 mb-2 flex items-center justify-between rounded-2xl bg-white p-2 shadow-sm">
+      <button type="button" onClick={close} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
+      <div className="flex items-center gap-2">
+        <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
+        <h2 className="min-w-32 text-center text-xl font-black">{year}년 {month}월</h2>
+        <button type="button" aria-label="다음 달" onClick={()=>moveMonth(1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">›</button>
       </div>
-      <div className="grid grid-cols-7 text-center text-sm font-black text-slate-400">
-        {["일","월","화","수","목","금","토"].map((day,i)=><span key={day} className={i===0?"text-rose-500":i===6?"text-blue-500":""}>{day}</span>)}
-      </div>
-      <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-2">
-        {cells.map((day,index)=>{
-          if(!day) return <span key={`empty-${index}`} className="min-h-28 sm:min-h-36"/>;
-          const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
-          const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
-          const today=dateKey===todayKey;
-          return <div key={dateKey} className={`min-h-28 min-w-0 rounded-xl border p-1 sm:min-h-36 sm:p-1.5 ${today?"border-blue-500 bg-blue-50":"border-slate-100 bg-slate-50"}`}>
-            <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-black ${today?"bg-blue-600 text-white":index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-800"}`}>{day}</span>
-            <div className="mt-1 space-y-1">
-              {dayJobs.slice(0,2).map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className={`block w-full min-w-0 rounded px-1 py-1 text-left leading-[1.15] ${job.status==="처리완료"?"bg-emerald-100 text-emerald-900":"bg-blue-100 text-blue-900"}`}>
-                <b className="block truncate text-[8px] sm:text-[10px]">{job.status==="처리완료"?"(완) ":""}{schedule.time}</b>
-                <span className="line-clamp-3 mt-0.5 block break-keep text-[8px] font-black sm:text-[10px]">{job.site||"장소 미입력"}</span>
-                <span className="mt-0.5 block truncate text-[8px] opacity-75 sm:text-[9px]">{job.worker||"미배정"}</span>
-              </button>)}
-              {dayJobs.length>2&&<span className="block text-center text-[8px] font-black text-slate-500">외 {dayJobs.length-2}건</span>}
-            </div>
+      <span className="w-[58px] text-right text-xs font-black text-blue-700">{schedules.filter(({schedule})=>schedule.dateKey.startsWith(monthPrefix)).length}건</span>
+    </div>
+    <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+      <div className="min-w-[980px] border-l border-t border-slate-400">
+        {Array.from({length:cells.length/7},(_,week)=>{
+          const weekCells=cells.slice(week*7,week*7+7);
+          return <div key={week} className="grid grid-cols-7">
+            {weekCells.map((day,column)=>{
+              if(!day) return <div key={`empty-${week}-${column}`} className="min-h-[190px] border-b border-r border-slate-400 bg-slate-50"/>;
+              const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
+              const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
+              const today=dateKey===todayKey;
+              return <div key={dateKey} className={`min-h-[190px] border-b border-r border-slate-400 ${today?"bg-blue-50":"bg-white"}`}>
+                <div className={`border-b border-slate-400 px-2 py-1.5 text-center text-xs font-black ${column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-blue-200":"bg-[#dfe8f8]"}`}>
+                  <span className="block text-sm">{month}/{day}</span>
+                  <span>{weekdays[column]}</span>
+                </div>
+                <div className="divide-y divide-slate-200">
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full px-2 py-1.5 text-left text-[10px] font-bold leading-tight hover:bg-blue-50 ${job.status==="처리완료"?"text-emerald-700":"text-slate-900"}`}>
+                    <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{schedule.time} · {job.site||"장소 미입력"}</span>
+                    <span className="mt-0.5 block text-[9px] font-medium text-slate-500">{job.worker||"기사 미배정"}</span>
+                  </button>)}
+                </div>
+              </div>;
+            })}
           </div>;
         })}
       </div>
