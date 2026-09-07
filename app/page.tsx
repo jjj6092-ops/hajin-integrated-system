@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 type User = { email?: string };
 import {
   Bell,
@@ -707,6 +707,9 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const initialDate=jobs.map(job=>scheduleOf(job.date).dateKey).find(Boolean)||todayKey;
   const [year,setYear]=useState(Number(initialDate.slice(0,4)));
   const [month,setMonth]=useState(Number(initialDate.slice(5,7)));
+  const [calendarZoom,setCalendarZoom]=useState(0.35);
+  const pinchDistance=useRef<number|null>(null);
+  const pinchZoom=useRef(0.35);
   const firstDay=new Date(year,month-1,1).getDay();
   const lastDate=new Date(year,month,0).getDate();
   const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
@@ -718,19 +721,41 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
     const nextYear=next.getFullYear(), nextMonth=next.getMonth()+1;
     setYear(nextYear); setMonth(nextMonth);
   };
+  const distanceOf=(touches:TouchList)=>Math.hypot(
+    touches[0].clientX-touches[1].clientX,
+    touches[0].clientY-touches[1].clientY,
+  );
+  const startPinch=(event:React.TouchEvent<HTMLDivElement>)=>{
+    if(event.touches.length!==2) return;
+    pinchDistance.current=distanceOf(event.touches);
+    pinchZoom.current=calendarZoom;
+  };
+  const movePinch=(event:React.TouchEvent<HTMLDivElement>)=>{
+    if(event.touches.length!==2||!pinchDistance.current) return;
+    event.preventDefault();
+    const next=pinchZoom.current*(distanceOf(event.touches)/pinchDistance.current);
+    setCalendarZoom(Math.min(1,Math.max(0.3,Number(next.toFixed(2)))));
+  };
+  const endPinch=(event:React.TouchEvent<HTMLDivElement>)=>{
+    if(event.touches.length<2) pinchDistance.current=null;
+  };
   const weekdays=["일","월","화","수","목","금","토"];
   return <section className="min-h-screen py-2">
-    <div className="sticky left-0 top-0 z-10 mb-2 flex items-center justify-between rounded-2xl bg-white p-2 shadow-sm">
+    <div className="sticky left-0 top-0 z-10 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white p-2 shadow-sm">
       <button type="button" onClick={close} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
       <div className="flex items-center gap-2">
         <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
         <h2 className="min-w-32 text-center text-xl font-black">{year}년 {month}월</h2>
         <button type="button" aria-label="다음 달" onClick={()=>moveMonth(1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">›</button>
       </div>
-      <span className="w-[58px] text-right text-xs font-black text-blue-700">{schedules.filter(({schedule})=>schedule.dateKey.startsWith(monthPrefix)).length}건</span>
+      <div className="flex items-center rounded-xl bg-slate-100 p-1">
+        <button type="button" aria-label="달력 축소" onClick={()=>setCalendarZoom(value=>Math.max(0.3,Number((value-0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">−</button>
+        <button type="button" onClick={()=>setCalendarZoom(0.35)} className="min-w-14 px-2 text-xs font-black text-blue-700">{Math.round(calendarZoom*100)}%</button>
+        <button type="button" aria-label="달력 확대" onClick={()=>setCalendarZoom(value=>Math.min(1,Number((value+0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">＋</button>
+      </div>
     </div>
-    <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
-      <div className="min-w-[980px] border-l border-t border-slate-400">
+    <div onTouchStart={startPinch} onTouchMove={movePinch} onTouchEnd={endPinch} className="overflow-auto rounded-2xl bg-white shadow-sm" style={{touchAction:"pan-x pan-y"}}>
+      <div className="w-[980px] origin-top-left border-l border-t border-slate-400" style={{zoom:calendarZoom} as React.CSSProperties}>
         {Array.from({length:cells.length/7},(_,week)=>{
           const weekCells=cells.slice(week*7,week*7+7);
           return <div key={week} className="grid grid-cols-7">
