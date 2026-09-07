@@ -184,7 +184,15 @@ const holidaysOf=(year:number)=>{
     });
     if(needsSubstitute) addSubstitute(dates[dates.length-1]);
   });
-  if(year===2026) add("2026-06-03","지방선거일");
+  if(year===2026){
+    Object.assign(result,{
+      "2026-01-01":"신정","2026-02-16":"설날 연휴","2026-02-17":"설날","2026-02-18":"설날 연휴",
+      "2026-03-01":"삼일절","2026-03-02":"대체공휴일","2026-05-05":"어린이날","2026-05-24":"부처님오신날",
+      "2026-05-25":"대체공휴일","2026-06-03":"지방선거일","2026-06-06":"현충일","2026-08-15":"광복절",
+      "2026-08-17":"대체공휴일","2026-09-24":"추석 연휴","2026-09-25":"추석","2026-09-26":"추석 연휴",
+      "2026-10-03":"개천절","2026-10-05":"대체공휴일","2026-10-09":"한글날","2026-12-25":"성탄절",
+    });
+  }
   holidayCache.set(year,result);
   return result;
 };
@@ -759,8 +767,8 @@ function MonthlyCalendar({jobs,open,expand}:{jobs:Job[];open:(j:Job)=>void;expan
           const today=dateKey===todayKey;
           const holiday=holidayOf(dateKey);
           return <div key={dateKey} className={`min-h-32 min-w-0 rounded-xl border px-1 py-1.5 align-top shadow-sm ${today?"border-blue-500 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-100 bg-white"}`}>
-            <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":holiday||index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
-            {holiday&&<span className="block truncate text-center text-[7px] font-black text-rose-600">{holiday}</span>}
+            <span style={holiday&&!today?{color:"#dc2626"}:undefined} className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":holiday||index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
+            {holiday&&<span style={{color:"#dc2626"}} className="block truncate text-center text-[7px] font-black">{holiday}</span>}
             {dayJobs.slice(0,5).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-0.5 block w-full min-w-0 rounded px-0.5 py-1 text-center leading-none ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
               <span className="block truncate text-[8px] font-black">{job.worker||"미배정"}</span>
             </button>)}
@@ -843,18 +851,14 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   };
   const weekdays=["일","월","화","수","목","금","토"];
   return <section className="min-h-[100dvh] py-1">
-    <div className="sticky left-0 top-0 z-10 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white p-2 shadow-sm">
+    <div className="sticky left-0 top-0 z-10 mb-2 grid grid-cols-[72px_1fr_72px] items-center rounded-2xl bg-white p-2 shadow-sm">
       <button type="button" onClick={returnHome} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-center gap-1">
         <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
-        <h2 className="min-w-32 text-center text-xl font-black">{year}년 {month}월</h2>
+        <h2 className="min-w-28 text-center text-xl font-black">{year}년 {month}월</h2>
         <button type="button" aria-label="다음 달" onClick={()=>moveMonth(1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">›</button>
       </div>
-      <div className="flex items-center rounded-xl bg-slate-100 p-1">
-        <button type="button" aria-label="달력 축소" onClick={()=>setCalendarZoom(value=>Math.max(0.3,Number((value-0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">−</button>
-        <button type="button" onClick={()=>setCalendarZoom(fitZoom)} title="화면에 맞추기" className="min-w-14 px-2 text-xs font-black text-blue-700">{Math.round(calendarZoom*100)}%</button>
-        <button type="button" aria-label="달력 확대" onClick={()=>setCalendarZoom(value=>Math.min(1,Number((value+0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">＋</button>
-      </div>
+      <span aria-hidden="true"/>
     </div>
     <div onTouchStart={startPinch} onTouchMove={movePinch} onTouchEnd={endPinch} className="overflow-auto rounded-[28px] bg-gradient-to-br from-blue-50 via-white to-slate-100 p-1 shadow-lg" style={{touchAction:"pan-x pan-y"}}>
       <div className="w-[980px] origin-top-left p-2" style={{zoom:calendarZoom} as React.CSSProperties}>
@@ -868,7 +872,7 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
               return <div key={dateKey} style={{minHeight:weekHeight}} className={`overflow-hidden rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
-                <div className={`px-2 py-2 text-center text-xs font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
+                <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2 text-center text-xs font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
                   <span className="block text-sm">{month}/{day}</span>
                   <span>{weekdays[column]}</span>
                   {holiday&&<span className="mt-0.5 block truncate text-[10px]">{holiday}</span>}
