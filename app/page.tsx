@@ -969,7 +969,13 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
       </Box>
       <Box t="방문 일정">
         <label className="block text-sm font-bold">방문 날짜 *<input name="date" type="date" defaultValue={koreaDateKey()} className="input" required/></label>
-        <label className="block text-sm font-bold">방문 시간 *<input name="time" type="time" className="input" required/></label>
+        <label className="block text-sm font-bold">
+          방문 시간 *
+          <select name="time" defaultValue="" className="input appearance-none" required>
+            <option value="" disabled>시간을 선택하세요</option>
+            {Array.from({length:13},(_,index)=>index+8).map(hour=><option key={hour} value={`${String(hour).padStart(2,"0")}:00`}>{String(hour).padStart(2,"0")}시</option>)}
+          </select>
+        </label>
         <Field n="worker" l="출동기사" p="예: 우제일" />
       </Box>
       <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">
