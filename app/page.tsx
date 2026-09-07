@@ -332,7 +332,7 @@ export default function Page() {
   return (
     <main className="min-h-screen bg-[#eaf0f6] text-slate-900">
       <div className={`mx-auto min-h-screen bg-[#f8fafc] shadow-2xl ${view === "calendar" ? "max-w-3xl" : "max-w-md"}`}>
-        <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
+        {view !== "calendar" && <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
             <div className="grid size-10 place-items-center rounded-xl bg-[#df3548] font-black text-white">
               H
@@ -372,7 +372,7 @@ export default function Page() {
               <LogOut size={19} />
             </button>
           </div>
-        </header>
+        </header>}
         <div className={view === "calendar" ? "px-3 pb-8 sm:px-6" : "px-5 pb-28"}>
           {loadError && (
             <p className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
@@ -691,8 +691,8 @@ function MonthlyCalendar({jobs,open,expand}:{jobs:Job[];open:(j:Job)=>void;expan
           const today=dateKey===todayKey;
           return <div key={dateKey} className={`min-h-20 min-w-0 rounded-xl border px-1 py-1.5 align-top ${today?"border-blue-500 bg-blue-50":"border-transparent bg-slate-50"}`}>
             <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
-            {dayJobs.slice(0,2).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-1 block w-full min-w-0 rounded px-1 py-1.5 text-left leading-tight ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
-              <span className="line-clamp-3 block break-keep text-[9px] font-bold">{job.site||"장소 미입력"}</span>
+            {dayJobs.slice(0,2).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-1 block w-full min-w-0 rounded px-1 py-1.5 text-center leading-tight ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
+              <span className="block truncate text-[9px] font-black">{job.worker||"미배정"}</span>
             </button>)}
             {dayJobs.length>2&&<span className="mt-1 block text-center text-[9px] font-black text-slate-500">외 {dayJobs.length-2}건</span>}
           </div>;
@@ -705,7 +705,6 @@ function MonthlyCalendar({jobs,open,expand}:{jobs:Job[];open:(j:Job)=>void;expan
 function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:()=>void}) {
   const todayKey=koreaDateKey();
   const initialDate=jobs.map(job=>scheduleOf(job.date).dateKey).find(Boolean)||todayKey;
-  const [selectedDate,setSelectedDate]=useState(initialDate);
   const [year,setYear]=useState(Number(initialDate.slice(0,4)));
   const [month,setMonth]=useState(Number(initialDate.slice(5,7)));
   const firstDay=new Date(year,month-1,1).getDay();
@@ -714,56 +713,44 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   while(cells.length%7) cells.push(null);
   const schedules=jobs.map(job=>({job,schedule:scheduleOf(job.date)}));
   const monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
-  const selectedJobs=schedules.filter(({schedule})=>schedule.dateKey===selectedDate);
   const moveMonth=(amount:number)=>{
     const next=new Date(year,month-1+amount,1);
     const nextYear=next.getFullYear(), nextMonth=next.getMonth()+1;
     setYear(nextYear); setMonth(nextMonth);
-    setSelectedDate(`${nextYear}-${String(nextMonth).padStart(2,"0")}-01`);
   };
-  return <section className="pt-4">
-    <div className="flex items-center justify-between">
-      <button type="button" onClick={close} className="rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm">← 홈으로</button>
-      <span className="text-sm font-bold text-slate-400">날짜를 선택하세요</span>
-    </div>
-    <div className="mt-4 rounded-[28px] bg-white p-3 shadow-sm sm:p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-11 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
-        <h2 className="text-xl font-black">{year}년 {month}월</h2>
-        <button type="button" aria-label="다음 달" onClick={()=>moveMonth(1)} className="grid size-11 place-items-center rounded-xl bg-slate-100 text-xl font-black">›</button>
+  return <section className="min-h-screen py-3">
+    <div className="rounded-[24px] bg-white p-2 shadow-sm sm:p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <button type="button" onClick={close} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
+          <h2 className="min-w-32 text-center text-xl font-black">{year}년 {month}월</h2>
+          <button type="button" aria-label="다음 달" onClick={()=>moveMonth(1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">›</button>
+        </div>
+        <span className="w-[58px] text-right text-xs font-black text-blue-700">{schedules.filter(({schedule})=>schedule.dateKey.startsWith(monthPrefix)).length}건</span>
       </div>
       <div className="grid grid-cols-7 text-center text-sm font-black text-slate-400">
         {["일","월","화","수","목","금","토"].map((day,i)=><span key={day} className={i===0?"text-rose-500":i===6?"text-blue-500":""}>{day}</span>)}
       </div>
-      <div className="mt-2 grid grid-cols-7 gap-1.5 sm:gap-2">
+      <div className="mt-2 grid grid-cols-7 gap-1 sm:gap-2">
         {cells.map((day,index)=>{
-          if(!day) return <span key={`empty-${index}`} className="min-h-14 sm:min-h-20"/>;
+          if(!day) return <span key={`empty-${index}`} className="min-h-28 sm:min-h-36"/>;
           const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
           const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
-          const selected=dateKey===selectedDate, today=dateKey===todayKey;
-          return <button key={dateKey} type="button" onClick={()=>setSelectedDate(dateKey)} className={`relative min-h-14 rounded-xl border p-1 text-center sm:min-h-20 ${selected?"border-blue-600 bg-blue-600 text-white shadow-md":"border-slate-100 bg-slate-50"}`}>
-            <span className={`text-sm font-black ${!selected&&today?"text-blue-600":!selected&&index%7===0?"text-rose-500":!selected&&index%7===6?"text-blue-500":""}`}>{day}</span>
-            {dayJobs.length>0&&<><span className={`mx-auto mt-1 block size-1.5 rounded-full ${selected?"bg-white":"bg-blue-600"}`}/><span className="mt-1 block text-[10px] font-black">{dayJobs.length}건</span></>}
-          </button>;
+          const today=dateKey===todayKey;
+          return <div key={dateKey} className={`min-h-28 min-w-0 rounded-xl border p-1 sm:min-h-36 sm:p-1.5 ${today?"border-blue-500 bg-blue-50":"border-slate-100 bg-slate-50"}`}>
+            <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-black ${today?"bg-blue-600 text-white":index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-800"}`}>{day}</span>
+            <div className="mt-1 space-y-1">
+              {dayJobs.slice(0,2).map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className={`block w-full min-w-0 rounded px-1 py-1 text-left leading-[1.15] ${job.status==="처리완료"?"bg-emerald-100 text-emerald-900":"bg-blue-100 text-blue-900"}`}>
+                <b className="block truncate text-[8px] sm:text-[10px]">{job.status==="처리완료"?"(완) ":""}{schedule.time}</b>
+                <span className="line-clamp-3 mt-0.5 block break-keep text-[8px] font-black sm:text-[10px]">{job.site||"장소 미입력"}</span>
+                <span className="mt-0.5 block truncate text-[8px] opacity-75 sm:text-[9px]">{job.worker||"미배정"}</span>
+              </button>)}
+              {dayJobs.length>2&&<span className="block text-center text-[8px] font-black text-slate-500">외 {dayJobs.length-2}건</span>}
+            </div>
+          </div>;
         })}
       </div>
-    </div>
-    <div className="mb-3 mt-5 flex items-center justify-between">
-      <h3 className="text-lg font-black">{Number(selectedDate.slice(5,7))}월 {Number(selectedDate.slice(8,10))}일 현장</h3>
-      <span className="text-sm font-black text-blue-700">{selectedJobs.length}건</span>
-    </div>
-    <div className="space-y-3">
-      {selectedJobs.length===0&&<Empty text="등록된 방문 일정이 없습니다"/>}
-      {selectedJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className={`w-full rounded-2xl border-l-4 bg-white p-4 text-left shadow-sm ${job.status==="처리완료"?"border-emerald-500":"border-blue-600"}`}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-sm font-black text-blue-700">{job.status==="처리완료"?"(완) ":""}{schedule.time}</p>
-            <p className="mt-1 break-keep text-lg font-black leading-7">{job.site||"현장장소 미입력"}</p>
-            <p className="mt-1 text-sm font-bold text-slate-500">{job.company} · {job.worker||"기사 미배정"}</p>
-          </div>
-          <ChevronRight className="mt-2 shrink-0 text-slate-400" size={20}/>
-        </div>
-      </button>)}
     </div>
   </section>;
 }
