@@ -708,12 +708,16 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const [year,setYear]=useState(Number(initialDate.slice(0,4)));
   const [month,setMonth]=useState(Number(initialDate.slice(5,7)));
   const [calendarZoom,setCalendarZoom]=useState(0.35);
+  const [viewport,setViewport]=useState({width:390,height:800});
   const pinchDistance=useRef<number|null>(null);
   const pinchZoom=useRef(0.35);
   const firstDay=new Date(year,month-1,1).getDay();
   const lastDate=new Date(year,month,0).getDate();
   const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
   while(cells.length%7) cells.push(null);
+  const weekCount=cells.length/7;
+  const fitZoom=Math.min(1,Math.max(0.3,Number(Math.min((viewport.width-12)/980,(viewport.height-105)/(weekCount*190)).toFixed(2))));
+  const weekHeight=Math.max(190,Math.floor((viewport.height-105)/(calendarZoom*weekCount)));
   const schedules=jobs.map(job=>({job,schedule:scheduleOf(job.date)}));
   const monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
   const moveMonth=(amount:number)=>{
@@ -739,10 +743,38 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const endPinch=(event:React.TouchEvent<HTMLDivElement>)=>{
     if(event.touches.length<2) pinchDistance.current=null;
   };
+  useEffect(()=>{
+    const measure=()=>setViewport({width:window.innerWidth,height:window.innerHeight});
+    measure();
+    window.addEventListener("resize",measure);
+    return ()=>window.removeEventListener("resize",measure);
+  },[]);
+  useEffect(()=>setCalendarZoom(fitZoom),[fitZoom]);
+  useEffect(()=>{
+    let meta=document.querySelector('meta[name="viewport"]') as HTMLMetaElement|null;
+    const created=!meta;
+    if(!meta){
+      meta=document.createElement("meta");
+      meta.name="viewport";
+      document.head.appendChild(meta);
+    }
+    const original=meta.content;
+    meta.content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no";
+    return ()=>{
+      if(created) meta?.remove();
+      else if(meta) meta.content=original;
+    };
+  },[]);
+  const returnHome=()=>{
+    pinchDistance.current=null;
+    setCalendarZoom(fitZoom);
+    window.scrollTo({top:0,left:0,behavior:"auto"});
+    close();
+  };
   const weekdays=["일","월","화","수","목","금","토"];
-  return <section className="min-h-screen py-2">
+  return <section className="min-h-[100dvh] py-1">
     <div className="sticky left-0 top-0 z-10 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white p-2 shadow-sm">
-      <button type="button" onClick={close} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
+      <button type="button" onClick={returnHome} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
       <div className="flex items-center gap-2">
         <button type="button" aria-label="이전 달" onClick={()=>moveMonth(-1)} className="grid size-10 place-items-center rounded-xl bg-slate-100 text-xl font-black">‹</button>
         <h2 className="min-w-32 text-center text-xl font-black">{year}년 {month}월</h2>
@@ -750,7 +782,7 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
       </div>
       <div className="flex items-center rounded-xl bg-slate-100 p-1">
         <button type="button" aria-label="달력 축소" onClick={()=>setCalendarZoom(value=>Math.max(0.3,Number((value-0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">−</button>
-        <button type="button" onClick={()=>setCalendarZoom(0.35)} className="min-w-14 px-2 text-xs font-black text-blue-700">{Math.round(calendarZoom*100)}%</button>
+        <button type="button" onClick={()=>setCalendarZoom(fitZoom)} title="화면에 맞추기" className="min-w-14 px-2 text-xs font-black text-blue-700">{Math.round(calendarZoom*100)}%</button>
         <button type="button" aria-label="달력 확대" onClick={()=>setCalendarZoom(value=>Math.min(1,Number((value+0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">＋</button>
       </div>
     </div>
@@ -760,11 +792,11 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
           const weekCells=cells.slice(week*7,week*7+7);
           return <div key={week} className="grid grid-cols-7">
             {weekCells.map((day,column)=>{
-              if(!day) return <div key={`empty-${week}-${column}`} className="min-h-[190px] border-b border-r border-slate-400 bg-slate-50"/>;
+              if(!day) return <div key={`empty-${week}-${column}`} style={{minHeight:weekHeight}} className="border-b border-r border-slate-400 bg-slate-50"/>;
               const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
               const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
               const today=dateKey===todayKey;
-              return <div key={dateKey} className={`min-h-[190px] border-b border-r border-slate-400 ${today?"bg-blue-50":"bg-white"}`}>
+              return <div key={dateKey} style={{minHeight:weekHeight}} className={`border-b border-r border-slate-400 ${today?"bg-blue-50":"bg-white"}`}>
                 <div className={`border-b border-slate-400 px-2 py-1.5 text-center text-xs font-black ${column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-blue-200":"bg-[#dfe8f8]"}`}>
                   <span className="block text-sm">{month}/{day}</span>
                   <span>{weekdays[column]}</span>
