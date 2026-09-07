@@ -6,10 +6,12 @@ import {
   CalendarDays,
   Camera,
   ChevronRight,
-  ClipboardList,
   ClipboardPenLine,
+  CircleDollarSign,
   Eye,
   EyeOff,
+  FileCog,
+  FileSignature,
   FileText,
   History,
   Home,
@@ -17,11 +19,13 @@ import {
   LogOut,
   Mail,
   Package,
+  PackageSearch,
   Plus,
+  ReceiptText,
   Search,
-  Settings,
   ToolCase,
   UserRound,
+  Warehouse,
   Wrench,
 } from "lucide-react";
 import { supabase } from "./supabase";
@@ -60,6 +64,18 @@ type Job = {
   resolution: string;
   createdAt: string;
 };
+type BusinessDocument = {
+  id: number | string;
+  document_type: "estimate" | "transaction" | "proposal";
+  company: string;
+  recipient_email: string;
+  item_name: string;
+  model_name: string;
+  quantity: number;
+  unit_price: number;
+  memo: string;
+  created_at: string;
+};
 type View =
   | "home"
   | "calendar"
@@ -68,6 +84,9 @@ type View =
   | "detail"
   | "photos"
   | "estimate"
+  | "estimateList"
+  | "proposal"
+  | "proposalList"
   | "transaction"
   | "mail";
 const badge: Record<Status, string> = {
@@ -426,6 +445,9 @@ export default function Page() {
                     photos: "작업 사진",
                     detail: "A/S 상세",
                     estimate: "견적서",
+                    estimateList: "작성한 견적서",
+                    proposal: "제안서 작성",
+                    proposalList: "작성한 제안서",
                     transaction: "거래명세서",
                     mail: "메일 보내기",
                   }[view]
@@ -481,8 +503,11 @@ export default function Page() {
           )}{" "}
           {view === "photos" && <Photos say={say} />}{" "}
           {view === "estimate" && (
-            <DocumentForm type="estimate" userId={user.id} say={say} />
+            <DocumentForm type="estimate" userId={user.id} say={say} openEstimateList={()=>setView("estimateList")} />
           )}{" "}
+          {view === "estimateList" && <EstimateList />}{" "}
+          {view === "proposal" && <ProposalForm userId={user.id} say={say} openProposalList={()=>setView("proposalList")} />}{" "}
+          {view === "proposalList" && <ProposalList />}{" "}
           {view === "transaction" && (
             <DocumentForm type="transaction" userId={user.id} say={say} />
           )}{" "}
@@ -656,6 +681,7 @@ function Dashboard({
   open: (j: Job) => void;
 }) {
   const todayKey = koreaDateKey();
+  const [proposalOpen,setProposalOpen]=useState(false);
   const nums = [
     [
       "오늘 방문",
@@ -720,21 +746,48 @@ function Dashboard({
       </section>
       <MonthlyCalendar jobs={jobs} open={open} expand={() => setView("calendar")} />
       <Title text="사무 업무" />
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {[
-          [FileText, "견적서"],
-          [ClipboardList, "거래명세"],
-          [Mail, "메일 보내기"],
-          [Settings, "ERP"],
-        ].map(([I, t]: any) => (
-          <button
-            key={t}
-            className="min-w-24 rounded-2xl bg-white p-4 text-center shadow-sm"
-          >
-            <I className="mx-auto" size={21} />
-            <b className="mt-2 block whitespace-nowrap text-xs">{t}</b>
-          </button>
-        ))}
+      <div className="space-y-3 pb-2">
+        <section className="rounded-[24px] bg-white p-4 shadow-sm">
+          <div className="flex w-full items-center gap-3 rounded-2xl bg-blue-50 p-3 text-left text-blue-800">
+            <span className="grid size-11 place-items-center rounded-xl bg-blue-600 text-white"><FileText size={22} strokeWidth={2.4}/></span>
+            <span className="font-black">견적서</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={()=>setView("estimate")} className="rounded-xl bg-blue-600 px-3 py-3 text-sm font-black text-white">새 견적서 작성</button>
+            <button type="button" onClick={()=>setView("estimateList")} className="rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-black text-blue-700">작성한 견적서 보기</button>
+          </div>
+          <div className="ml-5 border-l-2 border-violet-300 pl-4 pt-3">
+            <div className="flex items-center gap-3 rounded-xl bg-violet-50 p-3 text-violet-800">
+              <ReceiptText size={20}/><b className="text-sm">계산서</b>
+            </div>
+            <div className="ml-5 border-l-2 border-violet-200 pl-4 pt-2">
+              <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm font-bold text-slate-700">
+                <CircleDollarSign size={19} className="text-emerald-600"/>입금 확인 · 미수 확인 처리
+              </div>
+            </div>
+          </div>
+        </section>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm"><span className="grid size-10 place-items-center rounded-xl bg-amber-50 text-amber-600"><FileCog size={21}/></span><b className="text-sm">사양서</b></div>
+          <button type="button" onClick={()=>setProposalOpen(open=>!open)} className={`flex items-center gap-3 rounded-2xl p-4 text-left shadow-sm ${proposalOpen?"bg-rose-600 text-white":"bg-white"}`}><span className={`grid size-10 place-items-center rounded-xl ${proposalOpen?"bg-white/20 text-white":"bg-rose-50 text-rose-600"}`}><FileSignature size={21}/></span><b className="text-sm">제안서</b><ChevronRight className={`ml-auto transition ${proposalOpen?"rotate-90":""}`} size={18}/></button>
+        </div>
+        {proposalOpen&&<div className="grid grid-cols-2 gap-2 rounded-2xl bg-rose-50 p-3 shadow-sm">
+          <button type="button" onClick={()=>setView("proposal")} className="rounded-xl bg-rose-600 px-3 py-3 text-sm font-black text-white">새 제안서 작성</button>
+          <button type="button" onClick={()=>setView("proposalList")} className="rounded-xl border border-rose-200 bg-white px-3 py-3 text-sm font-black text-rose-700">작성한 제안서 보기</button>
+        </div>}
+        <section className="rounded-[24px] bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-3 text-emerald-800">
+            <span className="grid size-11 place-items-center rounded-xl bg-emerald-600 text-white"><Warehouse size={22}/></span>
+            <b>부품 재고관리</b>
+          </div>
+          <div className="ml-5 border-l-2 border-violet-300 pl-4 pt-3">
+            <div className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm font-bold text-slate-700"><PackageSearch size={20} className="text-blue-600"/>재고 수량 확보 및 발주</div>
+            <div className="ml-5 grid grid-cols-2 gap-2 border-l-2 border-violet-200 pl-4 pt-2">
+              <span className="rounded-xl bg-blue-50 px-3 py-2 text-center text-sm font-black text-blue-700">렉스코</span>
+              <span className="rounded-xl bg-orange-50 px-3 py-2 text-center text-sm font-black text-orange-700">디랙스</span>
+            </div>
+          </div>
+        </section>
       </div>
     </>
   );
@@ -852,10 +905,10 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
               return <div key={dateKey} style={{minHeight:weekHeight}} className={`overflow-hidden rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
-                <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2 text-center text-xs font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
-                  <span className="block text-sm">{month}/{day}</span>
-                  <span>{weekdays[column]}</span>
-                  {holiday&&<span className="mt-0.5 block truncate text-[10px]">{holiday}</span>}
+                <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2.5 text-center font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-950"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
+                  <span className="block text-[32px] font-black leading-none tracking-tight">{month}/{day}</span>
+                  <span className="mt-1 block text-[22px] font-black leading-none">{weekdays[column]}</span>
+                  {holiday&&<span className="mt-1.5 block truncate text-[18px] font-black leading-none">{holiday}</span>}
                 </div>
                 <div className="space-y-1 p-1.5">
                   {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-[3px] px-2 py-1.5 text-left text-[10px] font-bold leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
@@ -1132,7 +1185,145 @@ function Photos({ say }: { say: (s: string) => void }) {
     </div>
   );
 }
-function DocumentForm({type,userId,say}:{type:"estimate"|"transaction";userId:string;say:(s:string)=>void}) {
+function ProposalForm({userId,say,openProposalList}:{userId:string;say:(s:string)=>void;openProposalList:()=>void}){
+  const [saved,setSaved]=useState(false);
+  const save=async(form:FormData)=>{
+    const company=String(form.get("company")||"").trim();
+    const title=String(form.get("title")||"").trim();
+    const body=String(form.get("body")||"").trim();
+    if(!company||!title||!body){say("제안처, 제안 제목, 제안 내용을 입력해주세요");return}
+    const {error}=await supabase.from("business_documents").insert({
+      document_type:"proposal",
+      company,
+      recipient_email:String(form.get("email")||"").trim(),
+      item_name:title,
+      model_name:String(form.get("category")||"").trim(),
+      quantity:1,
+      unit_price:Number(form.get("amount")||0),
+      memo:body,
+      created_by:userId,
+    });
+    if(error){say("제안서를 저장하지 못했습니다");return}
+    setSaved(true);say("제안서가 저장됐습니다");
+  };
+  return <form action={save} className="mt-5 space-y-4">
+    <Box t="제안 기본정보">
+      <label className="block text-sm font-bold">제안일<input name="proposal_date" type="date" defaultValue={koreaDateKey()} className="input"/></label>
+      <Field n="company" l="제안처 *" p="예: 한강센트럴자이"/>
+      <Field n="email" l="담당자 이메일" p="example@company.com"/>
+      <Field n="title" l="제안 제목 *" p="예: 커뮤니티센터 운동기구 교체 제안"/>
+      <Field n="category" l="제안 구분" p="예: 신규 설치·교체·유지보수"/>
+    </Box>
+    <Box t="제안 내용">
+      <label className="block text-sm font-bold">상세 내용 *<textarea name="body" rows={10} className="input resize-none" placeholder="제안 배경, 제품 구성, 기대 효과 등을 입력하세요"/></label>
+      <label className="block text-sm font-bold">제안 금액<input name="amount" type="number" min="0" className="input" placeholder="0"/></label>
+    </Box>
+    <button className="w-full rounded-2xl bg-rose-600 py-4 font-black text-white shadow-lg">제안서 저장</button>
+    {saved&&<div className="grid grid-cols-2 gap-3"><button type="button" onClick={()=>window.print()} className="rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button><button type="button" onClick={openProposalList} className="rounded-2xl bg-rose-50 py-4 font-black text-rose-700">작성한 제안서 보기</button></div>}
+  </form>;
+}
+function ProposalList(){
+  const [documents,setDocuments]=useState<BusinessDocument[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  useEffect(()=>{
+    let active=true;
+    supabase.from("business_documents")
+      .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
+      .eq("document_type","proposal")
+      .order("created_at",{ascending:false})
+      .then(({data,error})=>{
+        if(!active) return;
+        if(error) setError("작성한 제안서를 불러오지 못했습니다");
+        else setDocuments((data??[]) as BusinessDocument[]);
+        setLoading(false);
+      });
+    return()=>{active=false};
+  },[]);
+  if(loading) return <div className="mt-5 rounded-3xl bg-white p-8 text-center text-sm font-bold text-slate-500 shadow-sm">제안서를 불러오는 중입니다</div>;
+  if(error) return <div className="mt-5 rounded-3xl bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">{error}</div>;
+  if(!documents.length) return <div className="mt-5"><Empty text="아직 작성된 제안서가 없습니다"/></div>;
+  return <div className="mt-5 space-y-3">
+    <p className="text-sm font-bold text-slate-500">총 {documents.length}개의 제안서가 있습니다</p>
+    {documents.map(document=>{
+      const writtenAt=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(document.created_at));
+      return <details key={document.id} className="group overflow-hidden rounded-[22px] bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-600"><FileSignature size={21}/></span>
+          <span className="min-w-0 flex-1"><b className="block truncate">{document.item_name}</b><small className="mt-1 block text-xs text-slate-500">{document.company} · {writtenAt}</small></span>
+          <ChevronRight className="shrink-0 transition group-open:rotate-90" size={18}/>
+        </summary>
+        <div className="border-t border-slate-100 bg-slate-50 p-4 text-sm">
+          <p className="font-bold text-slate-500">제안 구분</p><p className="mt-1 font-black">{document.model_name||"구분 없음"}</p>
+          <p className="mt-4 font-bold text-slate-500">제안 내용</p><p className="mt-1 whitespace-pre-wrap leading-6">{document.memo}</p>
+          <p className="mt-4 flex justify-between rounded-xl bg-rose-50 p-3 font-black text-rose-700"><span>제안 금액</span><span>{Number(document.unit_price).toLocaleString()}원</span></p>
+          {document.recipient_email&&<p className="mt-3 text-xs text-slate-500">담당자 이메일 · {document.recipient_email}</p>}
+        </div>
+      </details>;
+    })}
+  </div>;
+}
+function EstimateList(){
+  const [documents,setDocuments]=useState<BusinessDocument[]>([]);
+  const [loading,setLoading]=useState(true);
+  const [error,setError]=useState("");
+  useEffect(()=>{
+    let active=true;
+    supabase.from("business_documents")
+      .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
+      .eq("document_type","estimate")
+      .order("created_at",{ascending:false})
+      .then(({data,error})=>{
+        if(!active) return;
+        if(error) setError("작성한 견적서를 불러오지 못했습니다");
+        else setDocuments((data??[]) as BusinessDocument[]);
+        setLoading(false);
+      });
+    return()=>{active=false};
+  },[]);
+  const groups=useMemo(()=>{
+    const grouped=new Map<string,BusinessDocument[]>();
+    documents.forEach(document=>{
+      const key=`${document.company}-${document.created_at.slice(0,16)}`;
+      grouped.set(key,[...(grouped.get(key)??[]),document]);
+    });
+    return Array.from(grouped.values());
+  },[documents]);
+  if(loading) return <div className="mt-5 rounded-3xl bg-white p-8 text-center text-sm font-bold text-slate-500 shadow-sm">견적서를 불러오는 중입니다</div>;
+  if(error) return <div className="mt-5 rounded-3xl bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">{error}</div>;
+  if(!groups.length) return <div className="mt-5"><Empty text="아직 작성된 견적서가 없습니다"/></div>;
+  return <div className="mt-5 space-y-3">
+    <p className="text-sm font-bold text-slate-500">총 {groups.length}개의 견적서가 있습니다</p>
+    {groups.map((items,index)=>{
+      const first=items[0];
+      const supply=items.reduce((sum,item)=>sum+Number(item.quantity)*Number(item.unit_price),0);
+      const total=supply+Math.round(supply*.1);
+      const writtenAt=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(first.created_at));
+      return <details key={`${first.id}-${index}`} className="group overflow-hidden rounded-[22px] bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><FileText size={21}/></span>
+          <span className="min-w-0 flex-1"><b className="block truncate">{first.company}</b><small className="mt-1 block text-xs text-slate-500">{writtenAt} · {items.length}개 품목</small></span>
+          <span className="shrink-0 text-right"><b className="block text-blue-700">{total.toLocaleString()}원</b><ChevronRight className="ml-auto mt-1 transition group-open:rotate-90" size={17}/></span>
+        </summary>
+        <div className="border-t border-slate-100 bg-slate-50 p-4">
+          <div className="space-y-2">
+            {items.map(item=><div key={item.id} className="rounded-xl bg-white p-3 text-sm">
+              <div className="flex justify-between gap-3"><b>{item.item_name}</b><b>{(Number(item.quantity)*Number(item.unit_price)).toLocaleString()}원</b></div>
+              <p className="mt-1 text-xs text-slate-500">{item.model_name||"모델명 없음"} · {item.quantity}개 × {Number(item.unit_price).toLocaleString()}원</p>
+              {item.memo&&<p className="mt-2 text-xs text-slate-600">{item.memo}</p>}
+            </div>)}
+          </div>
+          <div className="mt-3 rounded-xl bg-blue-50 p-3 text-sm">
+            <p className="flex justify-between"><span>공급가액</span><b>{supply.toLocaleString()}원</b></p>
+            <p className="mt-1 flex justify-between"><span>부가세</span><b>{Math.round(supply*.1).toLocaleString()}원</b></p>
+            <p className="mt-2 flex justify-between border-t border-blue-200 pt-2 font-black text-blue-800"><span>총 견적금액</span><span>{total.toLocaleString()}원</span></p>
+          </div>
+        </div>
+      </details>;
+    })}
+  </div>;
+}
+function DocumentForm({type,userId,say,openEstimateList}:{type:"estimate"|"transaction";userId:string;say:(s:string)=>void;openEstimateList?:()=>void}) {
   const [saved,setSaved]=useState(false);
   const [issuer,setIssuer]=useState<"하진"|"렉스코">("하진");
   const [items,setItems]=useState([{item_name:"",model_name:"",quantity:"1",unit_price:"",memo:""}]);
@@ -1194,7 +1385,7 @@ function DocumentForm({type,userId,say}:{type:"estimate"|"transaction";userId:st
       <textarea name="memo" rows={4} className="input resize-none" placeholder="비고"/>
     </Box>
     <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">견적서 저장</button>
-    {saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}
+    {saved&&<><button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>{openEstimateList&&<button type="button" onClick={openEstimateList} className="w-full rounded-2xl bg-blue-50 py-4 font-black text-blue-700">작성한 견적서 보기</button>}</>}
   </form>;
 }
 function MailForm({say}:{say:(s:string)=>void}) {
