@@ -122,6 +122,74 @@ const scheduleOf = (note: string) => {
   return { dateKey: "", time: value || "시간 미정" };
 };
 
+const holidayCache=new Map<number,Record<string,string>>();
+const dateKeyOf=(date:Date)=>date.toISOString().slice(0,10);
+const dateFromKey=(key:string)=>new Date(`${key}T12:00:00Z`);
+const addDate=(key:string,days:number)=>{
+  const date=dateFromKey(key);
+  date.setUTCDate(date.getUTCDate()+days);
+  return dateKeyOf(date);
+};
+const holidaysOf=(year:number)=>{
+  const cached=holidayCache.get(year);
+  if(cached) return cached;
+  const result:Record<string,string>={};
+  const add=(key:string,name:string)=>{result[key]=result[key]?`${result[key]} · ${name}`:name;};
+  const fixed:Array<[string,string,boolean]>=[
+    [`${year}-01-01`,"신정",false],
+    [`${year}-03-01`,"삼일절",true],
+    [`${year}-05-05`,"어린이날",true],
+    [`${year}-06-06`,"현충일",false],
+    [`${year}-08-15`,"광복절",true],
+    [`${year}-10-03`,"개천절",true],
+    [`${year}-10-09`,"한글날",true],
+    [`${year}-12-25`,"성탄절",true],
+  ];
+  fixed.forEach(([key,name])=>add(key,name));
+  const lunar=new Intl.DateTimeFormat("en-US-u-ca-chinese",{timeZone:"Asia/Seoul",month:"numeric",day:"numeric"});
+  const lunarDates:Record<string,string>={};
+  for(let cursor=new Date(Date.UTC(year,0,1,12));cursor.getUTCFullYear()===year;cursor.setUTCDate(cursor.getUTCDate()+1)){
+    const parts=lunar.formatToParts(cursor);
+    const lunarMonth=parts.find(part=>part.type==="month")?.value;
+    const lunarDay=parts.find(part=>part.type==="day")?.value;
+    if(lunarMonth&&lunarDay) lunarDates[`${lunarMonth}/${lunarDay}`]=dateKeyOf(cursor);
+  }
+  const seollal=lunarDates["1/1"];
+  const buddha=lunarDates["4/8"];
+  const chuseok=lunarDates["8/15"];
+  const lunarBreaks:Array<{dates:string[];substituteOnSaturday:boolean}>=[];
+  if(seollal){
+    const dates=[addDate(seollal,-1),seollal,addDate(seollal,1)];
+    dates.forEach((key,index)=>add(key,index===1?"설날":"설날 연휴"));
+    lunarBreaks.push({dates,substituteOnSaturday:false});
+  }
+  if(buddha){add(buddha,"부처님오신날");lunarBreaks.push({dates:[buddha],substituteOnSaturday:true});}
+  if(chuseok){
+    const dates=[addDate(chuseok,-1),chuseok,addDate(chuseok,1)];
+    dates.forEach((key,index)=>add(key,index===1?"추석":"추석 연휴"));
+    lunarBreaks.push({dates,substituteOnSaturday:false});
+  }
+  const addSubstitute=(afterKey:string)=>{
+    let next=addDate(afterKey,1);
+    while(result[next]||[0,6].includes(dateFromKey(next).getUTCDay())) next=addDate(next,1);
+    add(next,"대체공휴일");
+  };
+  fixed.filter(([, ,substitute])=>substitute).forEach(([key])=>{
+    if([0,6].includes(dateFromKey(key).getUTCDay())) addSubstitute(key);
+  });
+  lunarBreaks.forEach(({dates,substituteOnSaturday})=>{
+    const needsSubstitute=dates.some(key=>{
+      const day=dateFromKey(key).getUTCDay();
+      return day===0||(substituteOnSaturday&&day===6);
+    });
+    if(needsSubstitute) addSubstitute(dates[dates.length-1]);
+  });
+  if(year===2026) add("2026-06-03","지방선거일");
+  holidayCache.set(year,result);
+  return result;
+};
+const holidayOf=(dateKey:string)=>holidaysOf(Number(dateKey.slice(0,4)))[dateKey]||"";
+
 export default function Page() {
   const [user, setUser] = useState<User | null>(null),
     [authReady, setAuthReady] = useState(false),
@@ -689,8 +757,10 @@ function MonthlyCalendar({jobs,open,expand}:{jobs:Job[];open:(j:Job)=>void;expan
           const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
           const dayJobs=jobsWithSchedule.filter(({schedule})=>schedule.dateKey===dateKey);
           const today=dateKey===todayKey;
-          return <div key={dateKey} className={`min-h-32 min-w-0 rounded-xl border px-1 py-1.5 align-top ${today?"border-blue-500 bg-blue-50":"border-transparent bg-slate-50"}`}>
-            <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
+          const holiday=holidayOf(dateKey);
+          return <div key={dateKey} className={`min-h-32 min-w-0 rounded-xl border px-1 py-1.5 align-top shadow-sm ${today?"border-blue-500 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-100 bg-white"}`}>
+            <span className={`mx-auto grid size-6 place-items-center rounded-full text-xs font-bold ${today?"bg-blue-600 text-white":holiday||index%7===0?"text-rose-500":index%7===6?"text-blue-500":"text-slate-700"}`}>{day}</span>
+            {holiday&&<span className="block truncate text-center text-[7px] font-black text-rose-600">{holiday}</span>}
             {dayJobs.slice(0,5).map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job)}} title={`${job.company} / ${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`mt-0.5 block w-full min-w-0 rounded px-0.5 py-1 text-center leading-none ${job.status==="처리완료"?"bg-emerald-100 text-emerald-800":"bg-blue-100 text-blue-800"}`}>
               <span className="block truncate text-[8px] font-black">{job.worker||"미배정"}</span>
             </button>)}
@@ -786,23 +856,25 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
         <button type="button" aria-label="달력 확대" onClick={()=>setCalendarZoom(value=>Math.min(1,Number((value+0.1).toFixed(2))))} className="grid size-9 place-items-center rounded-lg bg-white text-xl font-black shadow-sm">＋</button>
       </div>
     </div>
-    <div onTouchStart={startPinch} onTouchMove={movePinch} onTouchEnd={endPinch} className="overflow-auto rounded-2xl bg-white shadow-sm" style={{touchAction:"pan-x pan-y"}}>
-      <div className="w-[980px] origin-top-left border-l border-t border-slate-400" style={{zoom:calendarZoom} as React.CSSProperties}>
+    <div onTouchStart={startPinch} onTouchMove={movePinch} onTouchEnd={endPinch} className="overflow-auto rounded-[28px] bg-gradient-to-br from-blue-50 via-white to-slate-100 p-1 shadow-lg" style={{touchAction:"pan-x pan-y"}}>
+      <div className="w-[980px] origin-top-left p-2" style={{zoom:calendarZoom} as React.CSSProperties}>
         {Array.from({length:cells.length/7},(_,week)=>{
           const weekCells=cells.slice(week*7,week*7+7);
-          return <div key={week} className="grid grid-cols-7">
+          return <div key={week} className="mb-2 grid grid-cols-7 gap-2 last:mb-0">
             {weekCells.map((day,column)=>{
-              if(!day) return <div key={`empty-${week}-${column}`} style={{minHeight:weekHeight}} className="border-b border-r border-slate-400 bg-slate-50"/>;
+              if(!day) return <div key={`empty-${week}-${column}`} style={{minHeight:weekHeight}} className="rounded-2xl border border-white/70 bg-white/40"/>;
               const dateKey=`${monthPrefix}-${String(day).padStart(2,"0")}`;
               const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
               const today=dateKey===todayKey;
-              return <div key={dateKey} style={{minHeight:weekHeight}} className={`border-b border-r border-slate-400 ${today?"bg-blue-50":"bg-white"}`}>
-                <div className={`border-b border-slate-400 px-2 py-1.5 text-center text-xs font-black ${column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-blue-200":"bg-[#dfe8f8]"}`}>
+              const holiday=holidayOf(dateKey);
+              return <div key={dateKey} style={{minHeight:weekHeight}} className={`overflow-hidden rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
+                <div className={`px-2 py-2 text-center text-xs font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
                   <span className="block text-sm">{month}/{day}</span>
                   <span>{weekdays[column]}</span>
+                  {holiday&&<span className="mt-0.5 block truncate text-[10px]">{holiday}</span>}
                 </div>
-                <div className="divide-y divide-slate-200">
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full px-2 py-1.5 text-left text-[10px] font-bold leading-tight hover:bg-blue-50 ${job.status==="처리완료"?"text-emerald-700":"text-slate-900"}`}>
+                <div className="space-y-1 p-1.5">
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${schedule.time} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-[3px] px-2 py-1.5 text-left text-[10px] font-bold leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{schedule.time} · {job.site||"장소 미입력"}</span>
                     <span className="mt-0.5 block text-[9px] font-medium text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
