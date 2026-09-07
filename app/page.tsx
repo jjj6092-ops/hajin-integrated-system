@@ -834,7 +834,7 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
   while(cells.length%7) cells.push(null);
   const weekCount=cells.length/7;
-  const fitZoom=Math.min(1,Math.max(0.3,Number(Math.min((viewport.width-12)/980,(viewport.height-130)/(weekCount*190)).toFixed(2))));
+  const fitZoom=Math.min(1,Math.max(0.3,Number(Math.min((viewport.width-30)/980,(viewport.height-130)/(weekCount*190)).toFixed(2))));
   const weekHeight=Math.max(190,Math.floor((viewport.height-130)/(calendarZoom*weekCount)));
   const schedules=jobs.map(job=>({job,schedule:scheduleOf(job.date)}));
   const monthPrefix=`${year}-${String(month).padStart(2,"0")}`;
@@ -908,17 +908,15 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
               const dayJobs=schedules.filter(({schedule})=>schedule.dateKey===dateKey);
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
-              const dense=dayJobs.length>=4;
-              const veryDense=dayJobs.length>=7;
               return <div key={dateKey} style={{minHeight:weekHeight}} className={`min-w-0 rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
                 <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2 text-center font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
                   <span className="block text-[22px] font-black leading-none">{day}</span>
                   {holiday&&<span className="mt-1 block truncate text-[14px] font-black leading-none">{holiday}</span>}
                 </div>
-                <div className={`${veryDense?"space-y-0.5 p-1":dense?"space-y-1 p-1.5":"space-y-2 p-2"}`}>
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full border-l-4 text-left font-black shadow-sm ${veryDense?"rounded-md px-1.5 py-1 text-[11px] leading-none":dense?"rounded-lg px-2 py-1.5 text-[15px] leading-tight":"rounded-xl px-3 py-2.5 text-[20px] leading-tight"} ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
+                <div className="space-y-1 p-1.5">
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-2 py-1.5 text-left text-[16px] font-black leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{displayTime(schedule.time)} · {job.site||"장소 미입력"}</span>
-                    <span className={`block font-bold text-slate-500 ${veryDense?"mt-0.5 text-[9px]":dense?"mt-0.5 text-[12px]":"mt-1 text-[16px]"}`}>{job.worker||"기사 미배정"}</span>
+                    <span className="mt-0.5 block text-[13px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
                 </div>
               </div>;
