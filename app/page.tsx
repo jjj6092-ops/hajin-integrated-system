@@ -18,7 +18,6 @@ import {
   LockKeyhole,
   LogOut,
   Mail,
-  Package,
   PackageSearch,
   Plus,
   ReceiptText,
@@ -431,6 +430,30 @@ export default function Page() {
     setJobs((x) => x.map((j) => (j.dbId === next.dbId ? next : j)));
     say("처리 내역이 저장됐습니다");
   };
+  const saveSchedule = async (site: string, date: string, time: string) => {
+    if (!user || !selected) return;
+    const { data, error } = await supabase
+      .from("as_jobs")
+      .update({ site: site.trim(), visit_note: [date, time].filter(Boolean).join(" "), updated_by: user.id })
+      .eq("id", selected.dbId)
+      .select("id,company,site,contact_phone,machine,issue,visit_note,worker,status,resolution,created_at")
+      .single();
+    if (error) { say("일정을 수정하지 못했습니다"); return; }
+    const next = toJob(data as JobRow);
+    setSelected(next);
+    setJobs((current) => current.map((job) => job.dbId === next.dbId ? next : job));
+    say("방문 일정과 현장 위치를 수정했습니다");
+  };
+  const uploadJobPhotos = async (category: string, files: File[]) => {
+    if (!user || !selected || !files.length) return;
+    for (const [index,file] of files.entries()) {
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
+      const path=`${selected.dbId}/${category}/${Date.now()}-${index}-${safeName}`;
+      const { error }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false});
+      if(error){say("사진을 저장하지 못했습니다");return;}
+    }
+    say(`${category} 사진 ${files.length}장을 첨부했습니다`);
+  };
   if (!authReady || !dataReady) return <AuthLoading />;
   if (initError) return <ConnectionError message={initError} />;
   if (!user) return <Login />;
@@ -443,11 +466,11 @@ export default function Page() {
         {view !== "calendar" && <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
             {view === "home" ? (
-              <div className="relative size-10 shrink-0 overflow-hidden rounded-xl bg-[#cbb0e3] shadow-sm ring-1 ring-slate-200">
+              <div className="relative h-10 w-20 shrink-0 overflow-hidden rounded-xl bg-[#20252b] shadow-sm ring-1 ring-slate-300">
                 <img
                   src="/hajin-logo.jpg"
                   alt="HAJIN"
-                  className="absolute left-1/2 top-1/2 h-[52px] max-w-none -translate-x-1/2 -translate-y-[61%]"
+                  className="h-full w-full object-contain"
                 />
               </div>
             ) : (
@@ -520,6 +543,8 @@ export default function Page() {
               job={selected}
               update={updateStatus}
               save={saveResolution}
+              saveSchedule={saveSchedule}
+              uploadPhotos={uploadJobPhotos}
             />
           )}{" "}
           {view === "photos" && <Photos say={say} />}{" "}
@@ -621,20 +646,22 @@ function Login() {
     setLoading(false);
   };
   return (
-    <main className="min-h-screen bg-gradient-to-b from-[#10376f] to-[#2471c8] px-5 py-10 text-slate-900">
-      <div className="mx-auto max-w-md">
-        <section className="pt-[8vh] text-center text-white">
-          <div className="mx-auto grid size-20 place-items-center rounded-[24px] bg-white/15 text-3xl font-black ring-1 ring-white/25">
-            H
+    <main className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#0b111b] via-[#172a46] to-[#0d4d89] px-5 py-8 text-slate-900">
+      <div aria-hidden="true" className="absolute -left-24 -top-20 size-72 rounded-full bg-blue-500/20 blur-3xl"/>
+      <div aria-hidden="true" className="absolute -bottom-28 -right-24 size-80 rounded-full bg-cyan-300/15 blur-3xl"/>
+      <div className="relative mx-auto max-w-md">
+        <section className="pt-[7vh] text-center text-white">
+          <div className="mx-auto flex h-24 w-64 items-center justify-center overflow-hidden rounded-[26px] border border-white/15 bg-[#181d24]/90 px-4 shadow-2xl shadow-black/40">
+            <img src="/hajin-logo.jpg" alt="HAJIN" className="h-full w-full object-contain"/>
           </div>
-          <h1 className="mt-6 text-3xl font-black">하진 통합시스템</h1>
-          <p className="mt-2 text-sm text-blue-100">
+          <h1 className="mt-6 text-3xl font-black tracking-tight">하진그룹</h1>
+          <p className="mt-2 text-sm font-bold text-blue-100/90">
             회사에서 발급받은 계정으로 로그인하세요
           </p>
         </section>
         <form
           onSubmit={submit}
-          className="mt-10 space-y-5 rounded-[30px] bg-white p-6 shadow-2xl shadow-blue-950/25"
+          className="mt-9 space-y-5 rounded-[30px] border border-white/50 bg-white/95 p-6 shadow-2xl shadow-black/30 backdrop-blur"
         >
           <label className="block text-sm font-black">
             아이디
@@ -678,7 +705,7 @@ function Login() {
           )}
           <button
             disabled={loading}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg disabled:opacity-60"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#174b91] to-[#2580d8] py-4 font-black text-white shadow-lg shadow-blue-900/25 disabled:opacity-60"
           >
             <LockKeyhole size={18} />
             {loading ? "로그인 중..." : "로그인"}
@@ -717,10 +744,10 @@ function Dashboard({
       "bg-rose-50 text-rose-700",
     ],
     [
-      "부품 대기",
-      jobs.filter((j) => j.status === "부품대기").length,
-      Package,
-      "bg-amber-50 text-amber-700",
+      "완료 내역",
+      jobs.filter((j) => j.status === "처리완료").length,
+      History,
+      "bg-emerald-50 text-emerald-700",
     ],
   ] as const;
   const officeFolders: Array<{
@@ -785,6 +812,20 @@ function Dashboard({
       <MonthlyCalendar jobs={jobs} open={open} expand={() => setView("calendar")} />
       <Title text="사무 업무" />
       <div className="space-y-3 pb-2">
+        {[0,2,4,6].map(start=>{
+          const row=officeFolders.filter(folder=>folder.key!=="contract").slice(start,start+2);
+          const opened=row.find(folder=>folder.key===openOffice);
+          return <div key={start} className="grid grid-cols-2 gap-3">
+            {row.map(({key,label,icon:Icon,color,iconColor})=><button key={key} type="button" onClick={()=>setOpenOffice(current=>current===key?null:key)} className={`flex min-h-[76px] items-center gap-3 rounded-2xl p-4 text-left shadow-sm transition ${row.length===1?"col-span-2":""} ${openOffice===key?color:"bg-white"}`}>
+              <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${openOffice===key?iconColor:color}`}><Icon size={21}/></span>
+              <b className="min-w-0 text-sm leading-tight">{label}</b>
+              <ChevronRight className={`ml-auto shrink-0 transition ${openOffice===key?"rotate-90":""}`} size={17}/>
+            </button>)}
+            {opened&&<div className={`col-span-2 grid ${opened.children.length===3?"grid-cols-3":"grid-cols-2"} gap-2 rounded-2xl p-3 shadow-sm ${opened.color}`}>
+              {opened.children.map(child=><button key={child.label} type="button" onClick={()=>child.view&&setView(child.view)} className="min-h-[48px] rounded-xl border border-white/70 bg-white px-2 py-3 text-xs font-black text-slate-700 shadow-sm">{child.label}</button>)}
+            </div>}
+          </div>;
+        })}
         {(()=>{
           const contract=officeFolders.find(folder=>folder.key==="contract")!;
           const ContractIcon=contract.icon;
@@ -804,20 +845,6 @@ function Dashboard({
             </div>}
           </section>;
         })()}
-        {[0,2,4,6].map(start=>{
-          const row=officeFolders.filter(folder=>folder.key!=="contract").slice(start,start+2);
-          const opened=row.find(folder=>folder.key===openOffice);
-          return <div key={start} className="grid grid-cols-2 gap-3">
-            {row.map(({key,label,icon:Icon,color,iconColor})=><button key={key} type="button" onClick={()=>setOpenOffice(current=>current===key?null:key)} className={`flex min-h-[76px] items-center gap-3 rounded-2xl p-4 text-left shadow-sm transition ${row.length===1?"col-span-2":""} ${openOffice===key?color:"bg-white"}`}>
-              <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${openOffice===key?iconColor:color}`}><Icon size={21}/></span>
-              <b className="min-w-0 text-sm leading-tight">{label}</b>
-              <ChevronRight className={`ml-auto shrink-0 transition ${openOffice===key?"rotate-90":""}`} size={17}/>
-            </button>)}
-            {opened&&<div className={`col-span-2 grid ${opened.children.length===3?"grid-cols-3":"grid-cols-2"} gap-2 rounded-2xl p-3 shadow-sm ${opened.color}`}>
-              {opened.children.map(child=><button key={child.label} type="button" onClick={()=>child.view&&setView(child.view)} className="min-h-[48px] rounded-xl border border-white/70 bg-white px-2 py-3 text-xs font-black text-slate-700 shadow-sm">{child.label}</button>)}
-            </div>}
-          </div>;
-        })}
       </div>
     </>
   );
@@ -944,7 +971,7 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
                   {holiday&&<span className="mt-1 block truncate text-[14px] font-black leading-none">{holiday}</span>}
                 </div>
                 <div className="space-y-1 p-1.5">
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-2 py-1.5 text-left text-[13px] font-black leading-tight shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] font-black leading-[1.15] shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{displayTime(schedule.time)} · {job.site||"장소 미입력"}</span>
                     <span className="mt-0.5 block text-[11px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
@@ -1124,13 +1151,30 @@ function Detail({
   job,
   update,
   save,
+  saveSchedule,
+  uploadPhotos,
 }: {
   job: Job;
   update: (s: Status) => Promise<void>;
   save: (v: string) => Promise<void>;
+  saveSchedule: (site:string,date:string,time:string) => Promise<void>;
+  uploadPhotos: (category:string,files:File[]) => Promise<void>;
 }) {
   const [value, setValue] = useState(job.resolution);
-  useEffect(() => setValue(job.resolution), [job.dbId, job.resolution]);
+  const initialSchedule=scheduleOf(job.date);
+  const [site,setSite]=useState(job.site);
+  const [visitDate,setVisitDate]=useState(initialSchedule.dateKey);
+  const [visitTime,setVisitTime]=useState(/^\d{1,2}:\d{2}$/.test(initialSchedule.time)?initialSchedule.time:"");
+  const photoCategories=["수리 전","고장 부위","작업 중","수리 후"] as const;
+  const [photos,setPhotos]=useState<Record<string,File[]>>({});
+  useEffect(() => {
+    const schedule=scheduleOf(job.date);
+    setValue(job.resolution);
+    setSite(job.site);
+    setVisitDate(schedule.dateKey);
+    setVisitTime(/^\d{1,2}:\d{2}$/.test(schedule.time)?schedule.time:"");
+    setPhotos({});
+  }, [job.dbId, job.resolution, job.site, job.date]);
   return (
     <div className="mt-5 space-y-4">
       <section className="rounded-3xl bg-[#1855a6] p-5 text-white">
@@ -1146,6 +1190,39 @@ function Detail({
         <Info I={ToolCase} l="증상" v={job.issue} />
         <Info I={CalendarDays} l="방문 예정" v={job.date || "일정 미정"} />
         <Info I={UserRound} l="담당 기사" v={job.worker || "미배정"} />
+      </Box>
+      <Box t="방문 일정 수정">
+        <label className="block text-sm font-bold">현장 위치<input value={site} onChange={(event)=>setSite(event.target.value)} className="input" placeholder="현장 위치를 입력하세요"/></label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-bold">방문 날짜<input type="date" value={visitDate} onChange={(event)=>setVisitDate(event.target.value)} className="input"/></label>
+          <label className="block text-sm font-bold">방문 시간<select value={visitTime} onChange={(event)=>setVisitTime(event.target.value)} className="input appearance-none">
+            <option value="">시간 미정</option>
+            {Array.from({length:13},(_,index)=>index+8).map(hour=><option key={hour} value={`${String(hour).padStart(2,"0")}:00`}>{hour}시</option>)}
+          </select></label>
+        </div>
+        <button type="button" onClick={()=>void saveSchedule(site,visitDate,visitTime)} className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white">수정 내용 저장</button>
+      </Box>
+      <Box t="사진 첨부">
+        <p className="text-sm text-slate-500">항목별로 사진을 여러 장 선택할 수 있습니다.</p>
+        <div className="grid grid-cols-2 gap-3">
+          {photoCategories.map((category,index)=>{
+            const selected=photos[category]||[];
+            const styles=["border-blue-200 bg-blue-50 text-blue-700","border-rose-200 bg-rose-50 text-rose-700","border-amber-200 bg-amber-50 text-amber-700","border-emerald-200 bg-emerald-50 text-emerald-700"];
+            return <label key={category} className={`flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-3 text-center ${styles[index]}`}>
+              <Camera size={27}/>
+              <b className="mt-2 text-sm">{category}</b>
+              <span className="mt-1 text-xs font-bold">{selected.length?`${selected.length}장 선택됨`:"사진 선택"}</span>
+              <input type="file" accept="image/*" multiple className="sr-only" onChange={(event)=>setPhotos(current=>({...current,[category]:Array.from(event.target.files||[])}))}/>
+            </label>;
+          })}
+        </div>
+        {Object.entries(photos).some(([,files])=>files.length>0)&&<div className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600">
+          {photoCategories.filter(category=>photos[category]?.length).map(category=><p key={category} className="py-0.5"><span className="text-blue-700">{category}</span> · {photos[category].length}장</p>)}
+        </div>}
+        <button type="button" disabled={!Object.values(photos).some(files=>files.length)} onClick={async()=>{
+          for(const category of photoCategories){const files=photos[category]||[];if(files.length) await uploadPhotos(category,files);}
+          setPhotos({});
+        }} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:bg-slate-300">항목별 작업사진 첨부</button>
       </Box>
       <Box t="진행 상태 변경">
         <div className="grid grid-cols-2 gap-2">
