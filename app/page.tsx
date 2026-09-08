@@ -15,6 +15,7 @@ import {
   FileText,
   History,
   Home,
+  Image as ImageIcon,
   LockKeyhole,
   LogOut,
   Mail,
@@ -304,11 +305,13 @@ export default function Page() {
     [loadError, setLoadError] = useState("");
   const viewRef = useRef<View>("home");
   const navigate = useCallback((nextView: View) => {
-    if (viewRef.current === nextView) return;
-    window.history.pushState(
-      { ...window.history.state, hajinView: nextView },
-      "",
-    );
+    // 홈 카드 등 빠른 화면 전환은 현재 ref가 잠깐 어긋나도 반드시 열리게 한다.
+    if (viewRef.current !== nextView) {
+      window.history.pushState(
+        { ...window.history.state, hajinView: nextView },
+        "",
+      );
+    }
     viewRef.current = nextView;
     setView(nextView);
   }, []);
@@ -1046,8 +1049,9 @@ function Dashboard({
         {nums.map(([label, n, Icon, style, targetView]) => (
           <button
             key={label}
+            type="button"
             onClick={() => setView(targetView)}
-            className="rounded-2xl bg-white p-3 text-left shadow-sm"
+            className="relative z-10 touch-manipulation rounded-2xl bg-white p-3 text-left shadow-sm active:scale-[0.98]"
           >
             <div
               className={`grid size-9 place-items-center rounded-xl ${style}`}
@@ -1395,7 +1399,9 @@ function Empty({ text }: { text: string }) {
 function Register({ add }: { add: (f: FormData) => Promise<void> }) {
   const [companyChoice,setCompanyChoice]=useState("");
   const [otherCompany,setOtherCompany]=useState("");
-  const [intakePhotoCount,setIntakePhotoCount]=useState(0);
+  const [intakeCameraCount,setIntakeCameraCount]=useState(0);
+  const [intakeGalleryCount,setIntakeGalleryCount]=useState(0);
+  const intakePhotoCount=intakeCameraCount+intakeGalleryCount;
   return (
     <form action={add} className="mt-5 space-y-4">
       <Box t="고객 정보">
@@ -1438,24 +1444,22 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
         <Field n="worker" l="출동기사" p="예: 우제일" />
       </Box>
       <Box t="접수사진">
-        <p className="text-sm leading-6 text-slate-500">고장 부위나 장비 상태를 촬영하거나 사진첩에서 여러 장 선택할 수 있습니다.</p>
-        <label className="flex min-h-[92px] cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50 text-blue-700 transition active:scale-[0.99]">
-          <span className="grid size-11 place-items-center rounded-xl bg-white shadow-sm">
-            <Camera size={22}/>
-          </span>
-          <span>
-            <b className="block text-sm">접수사진 선택</b>
-            <span className="mt-1 block text-xs font-bold text-blue-500">{intakePhotoCount > 0 ? `${intakePhotoCount}장 선택됨` : "촬영 또는 사진 선택"}</span>
-          </span>
-          <input
-            type="file"
-            name="intake_photos"
-            accept="image/*"
-            multiple
-            className="sr-only"
-            onChange={(event)=>setIntakePhotoCount(event.target.files?.length ?? 0)}
-          />
-        </label>
+        <p className="text-sm leading-6 text-slate-500">카메라로 바로 촬영하거나 휴대폰 갤러리에서 기존 사진을 여러 장 선택할 수 있습니다.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex min-h-[92px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50 p-3 text-blue-700 transition active:scale-[0.99]">
+            <Camera size={24}/>
+            <b className="mt-2 text-sm">카메라 촬영</b>
+            <span className="mt-1 text-xs font-bold text-blue-500">{intakeCameraCount?`${intakeCameraCount}장`:'바로 촬영'}</span>
+            <input type="file" name="intake_photos" accept="image/*" capture="environment" className="sr-only" onChange={(event)=>setIntakeCameraCount(event.target.files?.length ?? 0)}/>
+          </label>
+          <label className="flex min-h-[92px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 p-3 text-emerald-700 transition active:scale-[0.99]">
+            <ImageIcon size={24}/>
+            <b className="mt-2 text-sm">갤러리 선택</b>
+            <span className="mt-1 text-xs font-bold text-emerald-600">{intakeGalleryCount?`${intakeGalleryCount}장`:'여러 장 선택'}</span>
+            <input type="file" name="intake_photos" accept="image/*" multiple className="sr-only" onChange={(event)=>setIntakeGalleryCount(event.target.files?.length ?? 0)}/>
+          </label>
+        </div>
+        {intakePhotoCount>0&&<p className="text-xs font-bold text-slate-500">총 {intakePhotoCount}장 선택됨</p>}
       </Box>
       <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">
         A/S 접수 등록
@@ -1644,12 +1648,22 @@ function Detail({
           {photoCategories.map((category,index)=>{
             const selected=photos[category]||[];
             const styles=["border-blue-200 bg-blue-50 text-blue-700","border-rose-200 bg-rose-50 text-rose-700","border-amber-200 bg-amber-50 text-amber-700","border-emerald-200 bg-emerald-50 text-emerald-700"];
-            return <label key={category} className={`flex aspect-square cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-3 text-center ${styles[index]}`}>
-              <Camera size={27}/>
-              <b className="mt-2 text-sm">{category}</b>
-              <span className="mt-1 text-xs font-bold">{selected.length?`${selected.length}장 선택됨`:"사진 선택"}</span>
-              <input type="file" accept="image/*" multiple className="sr-only" onChange={(event)=>setPhotos(current=>({...current,[category]:Array.from(event.target.files||[])}))}/>
-            </label>;
+            const appendFiles=(files:File[])=>setPhotos(current=>({...current,[category]:[...(current[category]||[]),...files]}));
+            return <div key={category} className={`rounded-2xl border-2 border-dashed p-3 text-center ${styles[index]}`}>
+              <Camera size={25} className="mx-auto"/>
+              <b className="mt-2 block text-sm">{category}</b>
+              <span className="mt-1 block text-xs font-bold">{selected.length?`${selected.length}장 선택됨`:"사진을 추가하세요"}</span>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="cursor-pointer rounded-xl bg-white/80 px-2 py-2 text-[11px] font-black shadow-sm active:scale-[0.98]">
+                  카메라
+                  <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(event)=>appendFiles(Array.from(event.target.files||[]))}/>
+                </label>
+                <label className="cursor-pointer rounded-xl bg-white/80 px-2 py-2 text-[11px] font-black shadow-sm active:scale-[0.98]">
+                  갤러리
+                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(event)=>appendFiles(Array.from(event.target.files||[]))}/>
+                </label>
+              </div>
+            </div>;
           })}
         </div>
         {Object.entries(photos).some(([,files])=>files.length>0)&&<div className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600">
