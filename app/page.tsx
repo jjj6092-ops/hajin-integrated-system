@@ -106,7 +106,7 @@ const mergeBusinessDocuments = (remote: BusinessDocument[], local: BusinessDocum
     .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
 };
 
-type WorkflowStep = "접수" | "일정확정" | "출동준비" | "출동작업" | "작업완료" | "입금대기" | "거래명세서" | "최종완료";
+type WorkflowStep = "접수" | "출동" | "작업완료" | "정산완료";
 type JobWorkflow = {
   step: WorkflowStep;
   estimateSent: boolean;
@@ -117,11 +117,21 @@ type JobWorkflow = {
   transactionSent: boolean;
 };
 const WORKFLOW_KEY = "hajin_job_workflow_v1";
-const workflowSteps: WorkflowStep[] = ["접수","일정확정","출동준비","출동작업","작업완료","입금대기","거래명세서","최종완료"];
+const workflowSteps: WorkflowStep[] = ["접수","출동","작업완료","정산완료"];
 const defaultWorkflow = (): JobWorkflow => ({step:"접수",estimateSent:false,preparation:"",diagnosis:"",paymentStatus:"미입금",paymentAmount:"",transactionSent:false});
+const normalizeWorkflowStep = (step:any): WorkflowStep => {
+  if (step === "출동" || step === "출동준비" || step === "출동작업" || step === "일정확정") return "출동";
+  if (step === "작업완료" || step === "입금대기" || step === "거래명세서") return "작업완료";
+  if (step === "정산완료" || step === "최종완료") return "정산완료";
+  return "접수";
+};
 const readWorkflow = (jobId:number): JobWorkflow => {
   if (typeof window === "undefined") return defaultWorkflow();
-  try { const all=JSON.parse(localStorage.getItem(WORKFLOW_KEY)||"{}"); return {...defaultWorkflow(),...(all[String(jobId)]||{})}; } catch { return defaultWorkflow(); }
+  try {
+    const all=JSON.parse(localStorage.getItem(WORKFLOW_KEY)||"{}");
+    const saved=all[String(jobId)]||{};
+    return {...defaultWorkflow(),...saved,step:normalizeWorkflowStep(saved.step)};
+  } catch { return defaultWorkflow(); }
 };
 const writeWorkflow = (jobId:number,value:JobWorkflow) => {
   if (typeof window === "undefined") return;
@@ -1722,44 +1732,44 @@ function Detail({
         <p className="text-sm text-blue-100">{job.site || "현장 미정"}</p>
       </section>
       <Box t="A/S 진행 단계">
-        <div className="overflow-x-auto pb-1">
-          <div className="flex min-w-max items-center gap-1.5">
-            {workflowSteps.map((step,index)=>{
-              const current=workflowSteps.indexOf(workflow.step);
-              const done=index<current;
-              const active=index===current;
-              return <div key={step} className="flex items-center gap-1.5">
-                <button type="button" onClick={()=>saveWorkflow({step})} disabled={step==="최종완료"&&!(workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} className={`rounded-full px-3 py-2 text-xs font-black ${done?"bg-emerald-100 text-emerald-700":active?"bg-blue-600 text-white":"bg-slate-100 text-slate-500"} disabled:opacity-40`}>{done?"✓ ":""}{step}</button>
-                {index<workflowSteps.length-1&&<span className="text-slate-300">›</span>}
-              </div>;
-            })}
-          </div>
+        <div className="grid grid-cols-4 gap-2">
+          {workflowSteps.map((step,index)=>{
+            const current=workflowSteps.indexOf(workflow.step);
+            const done=index<current;
+            const active=index===current;
+            const locked=step==="정산완료" && !(job.status==="처리완료" && workflow.paymentStatus==="입금완료" && workflow.transactionSent);
+            return <button key={step} type="button" disabled={locked} onClick={()=>saveWorkflow({step})} className={`rounded-xl px-2 py-3 text-[11px] font-black leading-tight ${done?"bg-emerald-100 text-emerald-700":active?"bg-blue-600 text-white":"bg-slate-100 text-slate-500"} disabled:opacity-40`}>
+              {done?"✓ ":""}{step}
+            </button>;
+          })}
         </div>
-        <p className="text-xs font-bold text-slate-500">현재 단계 · <span className="text-blue-700">{workflow.step}</span></p>
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={()=>saveWorkflow({step:"일정확정"})} className="rounded-xl border border-slate-200 py-3 text-sm font-black">일정 확정</button>
-          <button type="button" onClick={()=>saveWorkflow({step:"출동작업"})} className="rounded-xl border border-slate-200 py-3 text-sm font-black">출동 / 작업 시작</button>
-        </div>
+        <p className="text-center text-xs font-bold text-slate-500">현재 단계 · <span className="text-blue-700">{workflow.step}</span></p>
       </Box>
-      <Box t="출동 준비">
-        <textarea value={workflow.preparation} onChange={e=>setWorkflow({...workflow,preparation:e.target.value})} rows={3} placeholder="필요 장비 · 부품 · 공구를 입력하세요" className="input resize-none"/>
-        <button type="button" onClick={()=>{saveWorkflow({preparation:workflow.preparation,step:"출동준비"});}} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white">준비 내용 저장 · 출동준비</button>
-      </Box>
-      <Box t="견적 / 정산">
+
+      <Box t="견적서 작성">
+        <p className="text-xs leading-5 text-slate-500">견적서는 접수 직후 또는 작업 완료 후 언제든 작성할 수 있습니다.</p>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={openEstimate} className="rounded-xl bg-blue-600 py-3 text-sm font-black text-white">견적서 작성</button>
-          <button type="button" onClick={()=>saveWorkflow({estimateSent:!workflow.estimateSent,step:workflow.estimateSent?workflow.step:"입금대기"})} className={`rounded-xl border py-3 text-sm font-black ${workflow.estimateSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.estimateSent?"✓ 견적 발송완료":"견적 발송 체크"}</button>
+          <button type="button" onClick={()=>saveWorkflow({estimateSent:!workflow.estimateSent})} className={`rounded-xl border py-3 text-sm font-black ${workflow.estimateSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.estimateSent?"✓ 견적 발송완료":"견적 발송 체크"}</button>
         </div>
+      </Box>
+
+      <Box t="출동 준비">
+        <textarea value={workflow.preparation} onChange={e=>setWorkflow({...workflow,preparation:e.target.value})} rows={3} placeholder="필요 장비 · 부품 · 공구를 입력하세요" className="input resize-none"/>
+        <button type="button" onClick={()=>saveWorkflow({preparation:workflow.preparation,step:"출동"})} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white">준비 내용 저장 · 출동 단계로</button>
+      </Box>
+
+      <Box t="정산">
         <div className="grid grid-cols-3 gap-2">
-          {(["미입금","일부입금","입금완료"] as const).map(x=><button key={x} type="button" onClick={()=>saveWorkflow({paymentStatus:x,step:x==="입금완료"?"거래명세서":"입금대기"})} className={`rounded-xl border py-2.5 text-xs font-black ${workflow.paymentStatus===x?"border-blue-600 bg-blue-50 text-blue-700":"border-slate-200"}`}>{x}</button>)}
+          {(["미입금","일부입금","입금완료"] as const).map(x=><button key={x} type="button" onClick={()=>saveWorkflow({paymentStatus:x})} className={`rounded-xl border py-2.5 text-xs font-black ${workflow.paymentStatus===x?"border-blue-600 bg-blue-50 text-blue-700":"border-slate-200"}`}>{x}</button>)}
         </div>
         <input value={workflow.paymentAmount} onChange={e=>setWorkflow({...workflow,paymentAmount:e.target.value})} onBlur={()=>saveWorkflow({paymentAmount:workflow.paymentAmount})} inputMode="numeric" placeholder="입금 금액 (선택)" className="input"/>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" onClick={openTransaction} disabled={workflow.paymentStatus!=="입금완료"} className="rounded-xl bg-violet-600 py-3 text-sm font-black text-white disabled:bg-slate-300">거래명세서 작성</button>
-          <button type="button" onClick={()=>saveWorkflow({transactionSent:!workflow.transactionSent,step:workflow.transactionSent?workflow.step:"거래명세서"})} disabled={workflow.paymentStatus!=="입금완료"} className={`rounded-xl border py-3 text-sm font-black disabled:opacity-40 ${workflow.transactionSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.transactionSent?"✓ 명세서 발송완료":"명세서 발송 체크"}</button>
+          <button type="button" onClick={()=>saveWorkflow({transactionSent:!workflow.transactionSent})} disabled={workflow.paymentStatus!=="입금완료"} className={`rounded-xl border py-3 text-sm font-black disabled:opacity-40 ${workflow.transactionSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.transactionSent?"✓ 명세서 발송완료":"명세서 발송 체크"}</button>
         </div>
-        <button type="button" disabled={!(job.status==="처리완료"&&workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} onClick={()=>saveWorkflow({step:"최종완료"})} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-black text-white disabled:bg-slate-300">1건 최종 완료 처리</button>
-        <p className="text-[11px] leading-5 text-slate-500">작업완료 + 입금완료 + 거래명세서 발송이 모두 확인되면 최종 완료할 수 있습니다. 견적서는 작업 전·후 언제든 작성할 수 있습니다.</p>
+        <button type="button" disabled={!(job.status==="처리완료"&&workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} onClick={()=>saveWorkflow({step:"정산완료"})} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-black text-white disabled:bg-slate-300">정산완료 · 1건 최종 완료</button>
+        <p className="text-[11px] leading-5 text-slate-500">작업완료 + 입금완료 + 거래명세서 발송이 확인되면 최종 완료할 수 있습니다.</p>
       </Box>
       <Box t="접수 내용">
         <Info I={Wrench} l="장비" v={job.machine || "장비 미정"} />
@@ -1816,7 +1826,7 @@ function Detail({
             (s) => (
               <button
                 key={s}
-                onClick={() => void update(s)}
+                onClick={() => { void update(s); if (s === "처리완료") saveWorkflow({step:"작업완료"}); else if (s === "방문예정" || s === "부품대기" || s === "재방문") saveWorkflow({step:"출동"}); }}
                 className={`rounded-xl border py-3 text-sm font-bold ${job.status === s ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200"}`}
               >
                 {s}
