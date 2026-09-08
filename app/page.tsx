@@ -110,6 +110,9 @@ type View =
   | "calendar"
   | "register"
   | "progress"
+  | "todayVisit"
+  | "todayPending"
+  | "todayComplete"
   | "detail"
   | "photos"
   | "estimate"
@@ -317,7 +320,7 @@ export default function Page() {
     const handleBack = (event: PopStateEvent) => {
       const nextView = event.state?.hajinView as View | undefined;
       const validViews: View[] = [
-        "home", "calendar", "register", "progress", "detail", "photos",
+        "home", "calendar", "register", "progress", "todayVisit", "todayPending", "todayComplete", "detail", "photos",
         "estimate", "estimateList", "proposal", "proposalList",
         "transaction", "transactionList", "contract", "contractList",
         "spec", "specList", "opinion", "opinionList", "mail", "notifications",
@@ -678,6 +681,9 @@ export default function Page() {
             <CalendarScreen jobs={jobs} open={open} close={() => navigate("home")} />
           )}{" "}
           {view === "register" && <Register add={add} />}{" "}
+          {view === "todayVisit" && <TodayJobs jobs={jobs} mode="visit" open={open} close={() => navigate("home")} />} {" "}
+          {view === "todayPending" && <TodayJobs jobs={jobs} mode="pending" open={open} close={() => navigate("home")} />} {" "}
+          {view === "todayComplete" && <TodayJobs jobs={jobs} mode="complete" open={open} close={() => navigate("home")} />} {" "}
           {view === "progress" && (
             <Progress
               jobs={filtered}
@@ -993,18 +999,21 @@ function Dashboard({
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey).length,
       CalendarDays,
       "bg-blue-50 text-blue-700",
+      "todayVisit" as View,
     ],
     [
       "오늘 미처리",
-      jobs.filter((j) => j.status !== "처리완료").length,
+      jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status !== "처리완료").length,
       ToolCase,
       "bg-rose-50 text-rose-700",
+      "todayPending" as View,
     ],
     [
       "오늘 완료",
-      jobs.filter((j) => j.status === "처리완료").length,
+      jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status === "처리완료").length,
       History,
       "bg-emerald-50 text-emerald-700",
+      "todayComplete" as View,
     ],
   ] as const;
   const officeFolders: Array<{
@@ -1034,10 +1043,10 @@ function Dashboard({
         />
       </section>
       <section className="mt-4 grid grid-cols-3 gap-3">
-        {nums.map(([label, n, Icon, style]) => (
+        {nums.map(([label, n, Icon, style, targetView]) => (
           <button
             key={label}
-            onClick={() => setView("progress")}
+            onClick={() => setView(targetView)}
             className="rounded-2xl bg-white p-3 text-left shadow-sm"
           >
             <div
@@ -1125,6 +1134,7 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const [year,setYear]=useState(Number(initialDate.slice(0,4)));
   const [month,setMonth]=useState(Number(initialDate.slice(5,7)));
   const [calendarZoom,setCalendarZoom]=useState(0.35);
+  const [selectedDate,setSelectedDate]=useState<string|null>(null);
   const [viewport,setViewport]=useState({width:390,height:800});
   const pinchDistance=useRef<number|null>(null);
   const pinchZoom=useRef(0.35);
@@ -1183,6 +1193,57 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
     close();
   };
   const weekdays=["일","월","화","수","목","금","토"];
+  if(selectedDate){
+    const selectedJobs=schedules
+      .filter(({schedule})=>schedule.dateKey===selectedDate)
+      .sort((a,b)=>{
+        const aDone=a.job.status==="처리완료";
+        const bDone=b.job.status==="처리완료";
+        if(aDone!==bDone) return aDone?1:-1;
+        return timeOrder(a.schedule.time)-timeOrder(b.schedule.time);
+      });
+    const completed=selectedJobs.filter(({job})=>job.status==="처리완료").length;
+    const incomplete=selectedJobs.length-completed;
+    const [sy,sm,sd]=selectedDate.split("-").map(Number);
+    const weekday=weekdays[new Date(sy,sm-1,sd).getDay()];
+    const holiday=holidayOf(selectedDate);
+    return <section className="min-h-[100dvh] py-1">
+      <div className="sticky top-0 z-10 mb-3 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm">
+        <button type="button" onClick={()=>setSelectedDate(null)} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-black text-slate-700">← 달력</button>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-lg font-black">{sy}년 {sm}월 {sd}일 ({weekday})</h2>
+          {holiday&&<p className="mt-0.5 text-xs font-black text-rose-600">{holiday}</p>}
+        </div>
+      </div>
+      <section className="mb-4 rounded-3xl bg-gradient-to-r from-[#174b91] to-[#2878d5] p-5 text-white shadow-lg shadow-blue-900/15">
+        <p className="text-sm font-bold text-blue-100">선택 날짜 일정</p>
+        <div className="mt-2 flex items-end justify-between gap-3">
+          <div><span className="text-3xl font-black">총 {selectedJobs.length}건</span></div>
+          <div className="text-right text-sm font-black text-blue-100"><p>완료 {completed}건</p><p>미완료 {incomplete}건</p></div>
+        </div>
+      </section>
+      <div className="space-y-3 pb-8">
+        {selectedJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className={`w-full rounded-3xl border p-5 text-left shadow-sm ${job.status==="처리완료"?"border-emerald-200 bg-emerald-50":"border-slate-200 bg-white"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className={`text-xl font-black ${job.status==="처리완료"?"text-emerald-800":"text-slate-950"}`}>{displayTime(schedule.time)}</p>
+              <h3 className="mt-1 break-keep text-lg font-black">{job.company||"고객사 미입력"}</h3>
+              <p className="mt-1 break-keep text-sm font-bold text-slate-600">{job.site||"현장 위치 미입력"}</p>
+            </div>
+            <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${badge[job.status]}`}>{job.status}</span>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/70 p-3 text-sm">
+            <div><span className="block text-[11px] font-bold text-slate-400">출동기사</span><b className="mt-0.5 block">{job.worker||"미배정"}</b></div>
+            <div><span className="block text-[11px] font-bold text-slate-400">장비 / 모델</span><b className="mt-0.5 block break-keep">{job.machine||"미입력"}</b></div>
+            <div className="col-span-2"><span className="block text-[11px] font-bold text-slate-400">접수 내용</span><b className="mt-0.5 block break-keep leading-5">{job.issue||"내용 없음"}</b></div>
+            {job.resolution&&<div className="col-span-2"><span className="block text-[11px] font-bold text-slate-400">처리 내용</span><b className="mt-0.5 block break-keep leading-5">{job.resolution}</b></div>}
+          </div>
+          <div className="mt-3 flex items-center justify-end gap-1 text-xs font-black text-blue-700">상세보기 <ChevronRight size={15}/></div>
+        </button>)}
+        {selectedJobs.length===0&&<div className="rounded-3xl bg-white px-5 py-12 text-center shadow-sm"><CalendarDays className="mx-auto text-slate-300" size={34}/><p className="mt-3 text-sm font-black text-slate-500">등록된 일정이 없습니다</p></div>}
+      </div>
+    </section>;
+  }
   return <section className="min-h-[100dvh] py-1">
     <div className="sticky left-0 top-0 z-10 mb-2 grid grid-cols-[72px_1fr_72px] items-center rounded-2xl bg-white p-2 shadow-sm">
       <button type="button" onClick={returnHome} className="rounded-xl bg-slate-100 px-3 py-2.5 text-sm font-black text-slate-700">← 홈</button>
@@ -1214,13 +1275,13 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
                 });
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
-              return <div key={dateKey} style={{minHeight:weekHeight}} className={`min-w-0 rounded-2xl border shadow-sm ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
+              return <div key={dateKey} role="button" tabIndex={0} onClick={()=>setSelectedDate(dateKey)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" ") setSelectedDate(dateKey);}} style={{minHeight:weekHeight}} className={`min-w-0 cursor-pointer rounded-2xl border shadow-sm transition active:scale-[0.99] ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
                 <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2 text-center font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
                   <span className="block text-[22px] font-black leading-none">{day}</span>
                   {holiday&&<span className="mt-1 block truncate text-[14px] font-black leading-none">{holiday}</span>}
                 </div>
                 <div className="space-y-1 p-1.5">
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] font-black leading-[1.15] shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job);}} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] font-black leading-[1.15] shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{displayTime(schedule.time)} · {job.site||"장소 미입력"}</span>
                     <span className="mt-0.5 block text-[11px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
@@ -1363,6 +1424,56 @@ function Field({ n, l, p }: { n: string; l: string; p: string }) {
     </label>
   );
 }
+function TodayJobs({
+  jobs,
+  mode,
+  open,
+  close,
+}: {
+  jobs: Job[];
+  mode: "visit" | "pending" | "complete";
+  open: (j: Job) => void;
+  close: () => void;
+}) {
+  const todayKey = koreaDateKey();
+  const todayJobs = jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey);
+  const visible = todayJobs
+    .filter((j) => mode === "visit" ? true : mode === "pending" ? j.status !== "처리완료" : j.status === "처리완료")
+    .sort((a,b) => (scheduleOf(a.date).time || "99:99").localeCompare(scheduleOf(b.date).time || "99:99"));
+  const title = mode === "visit" ? "오늘 방문 일정" : mode === "pending" ? "오늘 미처리 일정" : "오늘 완료 일정";
+  const subtitle = mode === "visit" ? "오늘 방문 예정인 전체 일정" : mode === "pending" ? "오늘 일정 중 아직 완료되지 않은 업무" : "오늘 일정 중 처리 완료된 업무";
+  return (
+    <section className="mt-5">
+      <div className="mb-4 flex items-center gap-3">
+        <button type="button" onClick={close} className="grid size-10 place-items-center rounded-2xl bg-white shadow-sm"><ChevronLeft size={20}/></button>
+        <div>
+          <h2 className="text-xl font-black text-slate-900">{title}</h2>
+          <p className="mt-0.5 text-xs text-slate-500">{subtitle} · 총 {visible.length}건</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {visible.map((j) => (
+          <button key={j.id} type="button" onClick={() => open(j)} className="w-full rounded-2xl bg-white p-4 text-left shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <b className="truncate text-base">{j.company}</b>
+                  <span className={`rounded-full px-2 py-1 text-[10px] font-black ${badge[j.status]}`}>{j.status}</span>
+                </div>
+                <p className="mt-2 text-sm font-bold text-slate-800">{displayTime(scheduleOf(j.date).time) || "시간 미정"}{j.site ? ` · ${j.site}` : ""}</p>
+                {j.worker && <p className="mt-1 text-xs text-slate-500">출동기사 {j.worker}</p>}
+                <p className="mt-2 line-clamp-2 text-sm text-slate-600">{j.issue}</p>
+              </div>
+              <ChevronRight className="mt-1 shrink-0 text-slate-300" size={20}/>
+            </div>
+          </button>
+        ))}
+        {visible.length === 0 && <Empty text="해당하는 오늘 일정이 없습니다" />}
+      </div>
+    </section>
+  );
+}
+
 function Progress({
   jobs,
   query,
