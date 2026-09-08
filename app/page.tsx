@@ -1118,9 +1118,9 @@ function MonthlyCalendar({jobs,expand}:{jobs:Job[];open:(j:Job)=>void;expand:()=
           <CalendarDays size={28}/>
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-blue-100">{year}년 · 등록 일정 {monthJobs.length}건</p>
+          <p className="text-xs font-bold text-blue-100">{month + 1}월 등록 일정 {monthJobs.length}건</p>
           <p className="mt-1 text-xl font-black">{month}월 일정 달력 크게보기</p>
-          <p className="mt-1 text-xs font-bold text-blue-100">총 완료 {monthCompleted}건 · 총 미완료 {monthIncomplete}건</p>
+          <p className="mt-1 text-xs font-bold text-blue-100">{month + 1}월 총완료 {monthCompleted}건, 미완료 {monthIncomplete}건</p>
         </div>
       </div>
       <ChevronRight className="shrink-0" size={24}/>
@@ -1138,6 +1138,7 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
   const [viewport,setViewport]=useState({width:390,height:800});
   const pinchDistance=useRef<number|null>(null);
   const pinchZoom=useRef(0.35);
+  const detailTouchStart=useRef<{x:number;y:number}|null>(null);
   const firstDay=new Date(year,month-1,1).getDay();
   const lastDate=new Date(year,month,0).getDate();
   const cells:Array<number|null>=[...Array(firstDay).fill(null),...Array.from({length:lastDate},(_,i)=>i+1)];
@@ -1193,6 +1194,60 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
     close();
   };
   const weekdays=["일","월","화","수","목","금","토"];
+  const openSelectedDate=(dateKey:string)=>{
+    window.history.pushState(
+      { ...window.history.state, hajinView:"calendar", hajinCalendarDate:dateKey },
+      "",
+    );
+    setSelectedDate(dateKey);
+  };
+  const closeSelectedDate=()=>{
+    if(window.history.state?.hajinCalendarDate){
+      window.history.back();
+    }else{
+      setSelectedDate(null);
+    }
+  };
+  useEffect(()=>{
+    const handleCalendarBack=(event:PopStateEvent)=>{
+      if(event.state?.hajinView==="calendar" && !event.state?.hajinCalendarDate){
+        setSelectedDate(null);
+        window.scrollTo({top:0,left:0,behavior:"auto"});
+      }
+    };
+    window.addEventListener("popstate",handleCalendarBack);
+    return ()=>window.removeEventListener("popstate",handleCalendarBack);
+  },[]);
+  const moveSelectedDate=(amount:number)=>{
+    if(!selectedDate) return;
+    const [currentYear,currentMonth,currentDay]=selectedDate.split("-").map(Number);
+    const next=new Date(currentYear,currentMonth-1,currentDay+amount);
+    const nextKey=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,"0")}-${String(next.getDate()).padStart(2,"0")}`;
+    setSelectedDate(nextKey);
+    if(window.history.state?.hajinCalendarDate){
+      window.history.replaceState(
+        { ...window.history.state, hajinView:"calendar", hajinCalendarDate:nextKey },
+        "",
+      );
+    }
+    setYear(next.getFullYear());
+    setMonth(next.getMonth()+1);
+    window.scrollTo({top:0,left:0,behavior:"auto"});
+  };
+  const startDetailSwipe=(event:React.TouchEvent<HTMLElement>)=>{
+    if(event.touches.length!==1){ detailTouchStart.current=null; return; }
+    detailTouchStart.current={x:event.touches[0].clientX,y:event.touches[0].clientY};
+  };
+  const endDetailSwipe=(event:React.TouchEvent<HTMLElement>)=>{
+    const start=detailTouchStart.current;
+    detailTouchStart.current=null;
+    if(!start||event.changedTouches.length!==1) return;
+    const end=event.changedTouches[0];
+    const dx=end.clientX-start.x;
+    const dy=end.clientY-start.y;
+    if(Math.abs(dx)<60||Math.abs(dx)<=Math.abs(dy)*1.2) return;
+    moveSelectedDate(dx<0?1:-1);
+  };
   if(selectedDate){
     const selectedJobs=schedules
       .filter(({schedule})=>schedule.dateKey===selectedDate)
@@ -1207,12 +1262,13 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
     const [sy,sm,sd]=selectedDate.split("-").map(Number);
     const weekday=weekdays[new Date(sy,sm-1,sd).getDay()];
     const holiday=holidayOf(selectedDate);
-    return <section className="min-h-[100dvh] py-1">
+    return <section onTouchStart={startDetailSwipe} onTouchEnd={endDetailSwipe} className="min-h-[100dvh] py-1" style={{touchAction:"pan-y"}}>
       <div className="sticky top-0 z-10 mb-3 flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm">
-        <button type="button" onClick={()=>setSelectedDate(null)} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-black text-slate-700">← 달력</button>
+        <button type="button" onClick={closeSelectedDate} className="rounded-xl bg-slate-100 px-4 py-2.5 text-sm font-black text-slate-700">← 달력</button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-black">{sy}년 {sm}월 {sd}일 ({weekday})</h2>
           {holiday&&<p className="mt-0.5 text-xs font-black text-rose-600">{holiday}</p>}
+          <p className="mt-0.5 text-[11px] font-bold text-slate-400">← 이전 날짜 · 좌우로 밀어 이동 · 다음 날짜 →</p>
         </div>
       </div>
       <section className="mb-4 rounded-3xl bg-gradient-to-r from-[#174b91] to-[#2878d5] p-5 text-white shadow-lg shadow-blue-900/15">
@@ -1275,13 +1331,13 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
                 });
               const today=dateKey===todayKey;
               const holiday=holidayOf(dateKey);
-              return <div key={dateKey} role="button" tabIndex={0} onClick={()=>setSelectedDate(dateKey)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" ") setSelectedDate(dateKey);}} style={{minHeight:weekHeight}} className={`min-w-0 cursor-pointer rounded-2xl border shadow-sm transition active:scale-[0.99] ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
+              return <div key={dateKey} role="button" tabIndex={0} onClick={()=>openSelectedDate(dateKey)} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" ") openSelectedDate(dateKey);}} style={{minHeight:weekHeight}} className={`min-w-0 cursor-pointer rounded-2xl border shadow-sm transition active:scale-[0.99] ${today?"border-blue-400 bg-blue-50":holiday?"border-rose-200 bg-rose-50":"border-slate-200 bg-white"}`}>
                 <div style={holiday?{color:"#dc2626"}:undefined} className={`px-2 py-2 text-center font-black ${holiday||column===0?"text-rose-600":column===6?"text-blue-600":"text-slate-900"} ${today?"bg-gradient-to-r from-blue-200 to-sky-100":holiday?"bg-gradient-to-r from-rose-100 to-orange-50":"bg-gradient-to-r from-slate-100 to-blue-50"}`}>
                   <span className="block text-[22px] font-black leading-none">{day}</span>
                   {holiday&&<span className="mt-1 block truncate text-[14px] font-black leading-none">{holiday}</span>}
                 </div>
                 <div className="space-y-1 p-1.5">
-                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();open(job);}} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] font-black leading-[1.15] shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
+                  {dayJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={(event)=>{event.stopPropagation();setSelectedDate(dateKey);}} title={`${displayTime(schedule.time)} / ${job.site||"장소 미입력"} / ${job.worker||"미배정"}`} className={`block w-full rounded-lg border-l-4 px-1.5 py-1 text-left text-[11px] font-black leading-[1.15] shadow-sm ${job.status==="처리완료"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-blue-500 bg-blue-50 text-slate-900"}`}>
                     <span className="block break-keep">{job.status==="처리완료"?"(완) ":""}{displayTime(schedule.time)} · {job.site||"장소 미입력"}</span>
                     <span className="mt-0.5 block text-[11px] font-bold text-slate-500">{job.worker||"기사 미배정"}</span>
                   </button>)}
