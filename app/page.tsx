@@ -106,6 +106,28 @@ const mergeBusinessDocuments = (remote: BusinessDocument[], local: BusinessDocum
     .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
 };
 
+type WorkflowStep = "접수" | "일정확정" | "출동준비" | "출동작업" | "작업완료" | "입금대기" | "거래명세서" | "최종완료";
+type JobWorkflow = {
+  step: WorkflowStep;
+  estimateSent: boolean;
+  preparation: string;
+  diagnosis: string;
+  paymentStatus: "미입금" | "일부입금" | "입금완료";
+  paymentAmount: string;
+  transactionSent: boolean;
+};
+const WORKFLOW_KEY = "hajin_job_workflow_v1";
+const workflowSteps: WorkflowStep[] = ["접수","일정확정","출동준비","출동작업","작업완료","입금대기","거래명세서","최종완료"];
+const defaultWorkflow = (): JobWorkflow => ({step:"접수",estimateSent:false,preparation:"",diagnosis:"",paymentStatus:"미입금",paymentAmount:"",transactionSent:false});
+const readWorkflow = (jobId:number): JobWorkflow => {
+  if (typeof window === "undefined") return defaultWorkflow();
+  try { const all=JSON.parse(localStorage.getItem(WORKFLOW_KEY)||"{}"); return {...defaultWorkflow(),...(all[String(jobId)]||{})}; } catch { return defaultWorkflow(); }
+};
+const writeWorkflow = (jobId:number,value:JobWorkflow) => {
+  if (typeof window === "undefined") return;
+  try { const all=JSON.parse(localStorage.getItem(WORKFLOW_KEY)||"{}"); all[String(jobId)]=value; localStorage.setItem(WORKFLOW_KEY,JSON.stringify(all)); } catch {}
+};
+
 type View =
   | "home"
   | "calendar"
@@ -712,6 +734,8 @@ export default function Page() {
               save={saveResolution}
               saveSchedule={saveSchedule}
               uploadPhotos={uploadJobPhotos}
+              openEstimate={() => navigate("estimate")}
+              openTransaction={() => navigate("transaction")}
             />
           )}{" "}
           {view === "photos" && <Photos say={say} />}{" "}
@@ -1006,27 +1030,28 @@ function Dashboard({
 }) {
   const todayKey = koreaDateKey();
   const [openOffice,setOpenOffice]=useState<string | null>(null);
+  const [todayMode,setTodayMode]=useState<"visit" | "pending" | "complete" | null>(null);
   const nums = [
     [
       "접수등록완료",
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey).length,
       CalendarDays,
       "bg-blue-50 text-blue-700",
-      "todayVisit" as View,
+      "visit" as const,
     ],
     [
       "미처리",
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status !== "처리완료").length,
       ToolCase,
       "bg-rose-50 text-rose-700",
-      "todayPending" as View,
+      "pending" as const,
     ],
     [
       "작업완료",
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status === "처리완료").length,
       History,
       "bg-emerald-50 text-emerald-700",
-      "todayComplete" as View,
+      "complete" as const,
     ],
   ] as const;
   const [todayYear, todayMonth, todayDay] = todayKey.split("-").map(Number);
@@ -1049,6 +1074,16 @@ function Dashboard({
     { key:"inventory", label:"재고관리", icon:Warehouse, color:"bg-emerald-50 text-emerald-700", iconColor:"bg-emerald-600 text-white", children:[{label:"재고 수량 확보 및 발주"},{label:"렉스코"},{label:"디랙스"}] },
     { key:"sales", label:"매출매입관리", icon:CircleDollarSign, color:"bg-indigo-50 text-indigo-700", iconColor:"bg-indigo-600 text-white", children:[{label:"매출 관리"},{label:"매입 관리"},{label:"입금·미수 확인"}] },
   ];
+  if (todayMode) {
+    return (
+      <TodayJobs
+        jobs={jobs}
+        mode={todayMode}
+        open={open}
+        close={() => setTodayMode(null)}
+      />
+    );
+  }
   return (
     <>
       <section className="mt-5 overflow-hidden rounded-[28px] bg-black shadow-lg shadow-slate-900/15">
@@ -1060,14 +1095,14 @@ function Dashboard({
       </section>
       <section className="mt-4 rounded-[24px] bg-white p-3 shadow-sm">
         <div className="mb-3 px-1">
-          <p className="text-sm font-black text-slate-900">{todayLabel}</p>
+          <p className="text-xl sm:text-2xl font-black text-slate-900 text-center w-full">{todayLabel}</p>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          {nums.map(([label, n, Icon, style, targetView]) => (
+          {nums.map(([label, n, Icon, style, targetMode]) => (
             <button
               key={label}
               type="button"
-              onClick={() => setView(targetView)}
+              onClick={() => setTodayMode(targetMode)}
               className="relative z-10 touch-manipulation rounded-2xl bg-slate-50 p-3 text-left ring-1 ring-slate-100 active:scale-[0.98]"
             >
               <div
@@ -1513,29 +1548,26 @@ function TodayJobs({
   close: () => void;
 }) {
   const todayKey = koreaDateKey();
-  const visible = useMemo(() => {
-    const list = jobs.filter((j) => {
-      const schedule = scheduleOf(j.date || "");
+  const visible = jobs
+    .filter((job) => {
+      const schedule = scheduleOf(String(job.date || ""));
       if (schedule.dateKey !== todayKey) return false;
-      if (mode === "pending") return j.status !== "처리완료";
-      if (mode === "complete") return j.status === "처리완료";
+      if (mode === "pending") return job.status !== "처리완료";
+      if (mode === "complete") return job.status === "처리완료";
       return true;
+    })
+    .sort((a, b) => {
+      const at = timeOrder(scheduleOf(String(a.date || "")).time);
+      const bt = timeOrder(scheduleOf(String(b.date || "")).time);
+      return at - bt;
     });
-    return [...list].sort((a, b) => {
-      const at = scheduleOf(a.date || "").time || "99:99";
-      const bt = scheduleOf(b.date || "").time || "99:99";
-      return at.localeCompare(bt);
-    });
-  }, [jobs, mode, todayKey]);
 
-  const title =
-    mode === "visit" ? "접수등록완료" : mode === "pending" ? "미처리" : "작업완료";
-  const subtitle =
-    mode === "visit"
-      ? "오늘 접수 등록된 전체 일정"
-      : mode === "pending"
-        ? "오늘 일정 중 아직 완료되지 않은 업무"
-        : "오늘 일정 중 작업 완료된 업무";
+  const title = mode === "visit" ? "접수등록완료" : mode === "pending" ? "미처리" : "작업완료";
+  const subtitle = mode === "visit"
+    ? "오늘 접수 등록된 전체 일정"
+    : mode === "pending"
+      ? "오늘 일정 중 아직 완료되지 않은 업무"
+      : "오늘 일정 중 작업 완료된 업무";
 
   return (
     <div className="mt-5">
@@ -1555,9 +1587,31 @@ function TodayJobs({
       </div>
 
       <div className="space-y-3">
-        {visible.map((j) => (
-          <Card key={String(j.id)} j={j} open={() => open(j)} />
-        ))}
+        {visible.map((job) => {
+          const schedule = scheduleOf(String(job.date || ""));
+          const statusClass = badge[job.status] || "bg-slate-100 text-slate-700";
+          return (
+            <button
+              key={String(job.dbId || job.id)}
+              type="button"
+              onClick={() => open(job)}
+              className="w-full rounded-2xl bg-white p-4 text-left shadow-sm active:scale-[0.99]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <b className="truncate text-base">{displayTime(schedule.time)}</b>
+                    <span className="truncate font-black">{job.company || "고객사 미정"}</span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-slate-500">{job.site || "현장 미정"} · {job.machine || "장비 미정"}</p>
+                  <p className="mt-2 truncate text-sm font-bold text-slate-700">{job.issue || "접수 내용 없음"}</p>
+                  <p className="mt-1 text-xs text-slate-500">출동기사 {job.worker || "미배정"}</p>
+                </div>
+                <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${statusClass}`}>{job.status || "접수"}</span>
+              </div>
+            </button>
+          );
+        })}
         {visible.length === 0 && <Empty text="해당하는 오늘 일정이 없습니다" />}
       </div>
     </div>
@@ -1624,12 +1678,16 @@ function Detail({
   save,
   saveSchedule,
   uploadPhotos,
+  openEstimate,
+  openTransaction,
 }: {
   job: Job;
   update: (s: Status) => Promise<void>;
   save: (v: string) => Promise<void>;
   saveSchedule: (site:string,date:string,time:string) => Promise<void>;
   uploadPhotos: (category:string,files:File[]) => Promise<void>;
+  openEstimate: () => void;
+  openTransaction: () => void;
 }) {
   const [value, setValue] = useState(job.resolution);
   const initialSchedule=scheduleOf(job.date);
@@ -1638,6 +1696,12 @@ function Detail({
   const [visitTime,setVisitTime]=useState(/^\d{1,2}:\d{2}$/.test(initialSchedule.time)?initialSchedule.time:"");
   const photoCategories=["수리 전","고장 부위","작업 중","수리 후"] as const;
   const [photos,setPhotos]=useState<Record<string,File[]>>({});
+  const [workflow,setWorkflow]=useState<JobWorkflow>(()=>readWorkflow(job.dbId));
+  const saveWorkflow=(patch:Partial<JobWorkflow>)=>{
+    const next={...workflow,...patch};
+    if(next.step==="최종완료" && !(next.paymentStatus==="입금완료" && next.transactionSent)) return;
+    setWorkflow(next); writeWorkflow(job.dbId,next);
+  };
   useEffect(() => {
     const schedule=scheduleOf(job.date);
     setValue(job.resolution);
@@ -1645,6 +1709,7 @@ function Detail({
     setVisitDate(schedule.dateKey);
     setVisitTime(/^\d{1,2}:\d{2}$/.test(schedule.time)?schedule.time:"");
     setPhotos({});
+    setWorkflow(readWorkflow(job.dbId));
   }, [job.dbId, job.resolution, job.site, job.date]);
   return (
     <div className="mt-5 space-y-4">
@@ -1656,6 +1721,46 @@ function Detail({
         <h2 className="mt-3 text-xl font-black">{job.company}</h2>
         <p className="text-sm text-blue-100">{job.site || "현장 미정"}</p>
       </section>
+      <Box t="A/S 진행 단계">
+        <div className="overflow-x-auto pb-1">
+          <div className="flex min-w-max items-center gap-1.5">
+            {workflowSteps.map((step,index)=>{
+              const current=workflowSteps.indexOf(workflow.step);
+              const done=index<current;
+              const active=index===current;
+              return <div key={step} className="flex items-center gap-1.5">
+                <button type="button" onClick={()=>saveWorkflow({step})} disabled={step==="최종완료"&&!(workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} className={`rounded-full px-3 py-2 text-xs font-black ${done?"bg-emerald-100 text-emerald-700":active?"bg-blue-600 text-white":"bg-slate-100 text-slate-500"} disabled:opacity-40`}>{done?"✓ ":""}{step}</button>
+                {index<workflowSteps.length-1&&<span className="text-slate-300">›</span>}
+              </div>;
+            })}
+          </div>
+        </div>
+        <p className="text-xs font-bold text-slate-500">현재 단계 · <span className="text-blue-700">{workflow.step}</span></p>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={()=>saveWorkflow({step:"일정확정"})} className="rounded-xl border border-slate-200 py-3 text-sm font-black">일정 확정</button>
+          <button type="button" onClick={()=>saveWorkflow({step:"출동작업"})} className="rounded-xl border border-slate-200 py-3 text-sm font-black">출동 / 작업 시작</button>
+        </div>
+      </Box>
+      <Box t="출동 준비">
+        <textarea value={workflow.preparation} onChange={e=>setWorkflow({...workflow,preparation:e.target.value})} rows={3} placeholder="필요 장비 · 부품 · 공구를 입력하세요" className="input resize-none"/>
+        <button type="button" onClick={()=>{saveWorkflow({preparation:workflow.preparation,step:"출동준비"});}} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white">준비 내용 저장 · 출동준비</button>
+      </Box>
+      <Box t="견적 / 정산">
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={openEstimate} className="rounded-xl bg-blue-600 py-3 text-sm font-black text-white">견적서 작성</button>
+          <button type="button" onClick={()=>saveWorkflow({estimateSent:!workflow.estimateSent,step:workflow.estimateSent?workflow.step:"입금대기"})} className={`rounded-xl border py-3 text-sm font-black ${workflow.estimateSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.estimateSent?"✓ 견적 발송완료":"견적 발송 체크"}</button>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(["미입금","일부입금","입금완료"] as const).map(x=><button key={x} type="button" onClick={()=>saveWorkflow({paymentStatus:x,step:x==="입금완료"?"거래명세서":"입금대기"})} className={`rounded-xl border py-2.5 text-xs font-black ${workflow.paymentStatus===x?"border-blue-600 bg-blue-50 text-blue-700":"border-slate-200"}`}>{x}</button>)}
+        </div>
+        <input value={workflow.paymentAmount} onChange={e=>setWorkflow({...workflow,paymentAmount:e.target.value})} onBlur={()=>saveWorkflow({paymentAmount:workflow.paymentAmount})} inputMode="numeric" placeholder="입금 금액 (선택)" className="input"/>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={openTransaction} disabled={workflow.paymentStatus!=="입금완료"} className="rounded-xl bg-violet-600 py-3 text-sm font-black text-white disabled:bg-slate-300">거래명세서 작성</button>
+          <button type="button" onClick={()=>saveWorkflow({transactionSent:!workflow.transactionSent,step:workflow.transactionSent?workflow.step:"거래명세서"})} disabled={workflow.paymentStatus!=="입금완료"} className={`rounded-xl border py-3 text-sm font-black disabled:opacity-40 ${workflow.transactionSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.transactionSent?"✓ 명세서 발송완료":"명세서 발송 체크"}</button>
+        </div>
+        <button type="button" disabled={!(job.status==="처리완료"&&workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} onClick={()=>saveWorkflow({step:"최종완료"})} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-black text-white disabled:bg-slate-300">1건 최종 완료 처리</button>
+        <p className="text-[11px] leading-5 text-slate-500">작업완료 + 입금완료 + 거래명세서 발송이 모두 확인되면 최종 완료할 수 있습니다. 견적서는 작업 전·후 언제든 작성할 수 있습니다.</p>
+      </Box>
       <Box t="접수 내용">
         <Info I={Wrench} l="장비" v={job.machine || "장비 미정"} />
         <Info I={ToolCase} l="증상" v={job.issue} />
