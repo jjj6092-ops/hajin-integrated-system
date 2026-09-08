@@ -1028,7 +1028,7 @@ function Dashboard({
     <>
       <section className="mt-5 overflow-hidden rounded-[28px] bg-black shadow-lg shadow-slate-900/15">
         <img
-          src="/hajin-motto.jpg"
+          src="/hajin-motto-v2.jpg?v=20260908"
           alt="하진그룹 사훈 일체유심조"
           className="block aspect-[3/1] w-full object-cover"
         />
