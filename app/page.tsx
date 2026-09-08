@@ -1079,22 +1079,12 @@ function MonthlyCalendar({jobs,expand}:{jobs:Job[];open:(j:Job)=>void;expand:()=
           <CalendarDays size={28}/>
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-blue-100">{year}년 · 등록 일정 {monthJobs.length}건</p>
+          <p className="text-xs font-bold text-blue-100">{year}년 · 등록 일정 {monthJobs.length}건 · 총 완료 {monthCompleted}건 · 총 미완료 {monthIncomplete}건</p>
           <p className="mt-1 text-xl font-black">{month}월 일정 달력 크게보기</p>
         </div>
       </div>
       <ChevronRight className="shrink-0" size={24}/>
     </button>
-    <div className="mt-3 grid grid-cols-2 gap-3">
-      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-center shadow-sm">
-        <p className="text-xs font-black text-emerald-600">{month}월 총 완료</p>
-        <p className="mt-1 text-xl font-black text-emerald-700">{monthCompleted}건</p>
-      </div>
-      <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-center shadow-sm">
-        <p className="text-xs font-black text-amber-600">{month}월 총 미완료</p>
-        <p className="mt-1 text-xl font-black text-amber-700">{monthIncomplete}건</p>
-      </div>
-    </div>
   </div>;
 }
 
