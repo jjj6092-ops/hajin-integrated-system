@@ -75,6 +75,36 @@ type BusinessDocument = {
   memo: string;
   created_at: string;
 };
+const LOCAL_DOC_CACHE_KEY = "hajin_business_documents_cache_v1";
+const readLocalBusinessDocuments = (): BusinessDocument[] => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_DOC_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+};
+const writeLocalBusinessDocuments = (rows: BusinessDocument[]) => {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(LOCAL_DOC_CACHE_KEY, JSON.stringify(rows.slice(0, 300))); } catch {}
+};
+const cacheBusinessDocuments = (rows: BusinessDocument[]) => {
+  const current = readLocalBusinessDocuments();
+  const merged = [...rows, ...current].filter((row, index, all) =>
+    index === all.findIndex(other => String(other.id) === String(row.id))
+  );
+  writeLocalBusinessDocuments(merged);
+};
+const mergeBusinessDocuments = (remote: BusinessDocument[], local: BusinessDocument[]) => {
+  const signature = (row: BusinessDocument) => [
+    row.document_type,row.company,row.item_name,row.model_name,row.quantity,row.unit_price,row.memo
+  ].join("|");
+  const seen = new Set<string>();
+  return [...remote, ...local]
+    .filter(row => { const key = signature(row); if (seen.has(key)) return false; seen.add(key); return true; })
+    .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
+};
+
 type View =
   | "home"
   | "calendar"
@@ -1079,8 +1109,9 @@ function MonthlyCalendar({jobs,expand}:{jobs:Job[];open:(j:Job)=>void;expand:()=
           <CalendarDays size={28}/>
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-blue-100">{year}년 · 등록 일정 {monthJobs.length}건 · 총 완료 {monthCompleted}건 · 총 미완료 {monthIncomplete}건</p>
+          <p className="text-xs font-bold text-blue-100">{year}년 · 등록 일정 {monthJobs.length}건</p>
           <p className="mt-1 text-xl font-black">{month}월 일정 달력 크게보기</p>
+          <p className="mt-1 text-xs font-bold text-blue-100">총 완료 {monthCompleted}건 · 총 미완료 {monthIncomplete}건</p>
         </div>
       </div>
       <ChevronRight className="shrink-0" size={24}/>
@@ -1542,19 +1573,25 @@ function ProposalForm({userId,say,openProposalList}:{userId:string;say:(s:string
     const title=String(form.get("title")||"").trim();
     const body=String(form.get("body")||"").trim();
     if(!company||!title||!body){say("제안처, 제안 제목, 제안 내용을 입력해주세요");return}
-    const {error}=await supabase.from("business_documents").insert({
-      document_type:"proposal",
+    const amount=Number(form.get("amount")||0);
+    const proposalRow={
+      document_type:"proposal" as const,
       company,
       recipient_email:String(form.get("email")||"").trim(),
       item_name:title,
       model_name:String(form.get("category")||"").trim(),
       quantity:1,
-      unit_price:Number(form.get("amount")||0),
+      unit_price:amount,
       memo:body,
       created_by:userId,
-    });
+    };
+    const {error}=await supabase.from("business_documents").insert(proposalRow);
     if(error){say("제안서를 저장하지 못했습니다");return}
-    const amount=Number(form.get("amount")||0);
+    const savedAt=new Date().toISOString();
+    cacheBusinessDocuments([{
+      id:`local-${savedAt}-proposal`,document_type:"proposal",company:proposalRow.company,recipient_email:proposalRow.recipient_email,
+      item_name:proposalRow.item_name,model_name:proposalRow.model_name,quantity:1,unit_price:proposalRow.unit_price,memo:proposalRow.memo,created_at:savedAt,
+    }]);
     setLastExport({title:"제안서",company,date:String(form.get("proposal_date")||koreaDateKey()),headers:["제안 제목","제안 구분","제안 내용","제안 금액"],rows:[[title,String(form.get("category")||"-").trim()||"-",body,`${amount.toLocaleString()}원`]]});
     setSaved(true);say("제안서가 저장됐습니다");
   };
@@ -1581,17 +1618,27 @@ function ProposalList(){
   const [query,setQuery]=useState("");
   useEffect(()=>{
     let active=true;
-    supabase.from("business_documents")
-      .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
-      .eq("document_type","proposal")
-      .order("created_at",{ascending:false})
-      .then(({data,error})=>{
-        if(!active) return;
-        if(error) setError("작성한 제안서를 불러오지 못했습니다");
-        else setDocuments((data??[]) as BusinessDocument[]);
-        setLoading(false);
-      });
-    return()=>{active=false};
+    const load=async()=>{
+      const local=readLocalBusinessDocuments().filter(row=>row.document_type==="proposal");
+      const {data,error}=await supabase.from("business_documents")
+        .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
+        .eq("document_type","proposal")
+        .order("created_at",{ascending:false});
+      if(!active) return;
+      if(error){
+        setDocuments(local);
+        setError(local.length?"":"작성한 제안서를 불러오지 못했습니다");
+      }else{
+        setDocuments(mergeBusinessDocuments((data??[]) as BusinessDocument[],local));
+        setError("");
+      }
+      setLoading(false);
+    };
+    void load();
+    const onVisible=()=>{ if(document.visibilityState==="visible") void load(); };
+    window.addEventListener("focus",load);
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>{active=false;window.removeEventListener("focus",load);document.removeEventListener("visibilitychange",onVisible)};
   },[]);
   if(loading) return <div className="mt-5 rounded-3xl bg-white p-8 text-center text-sm font-bold text-slate-500 shadow-sm">제안서를 불러오는 중입니다</div>;
   if(error) return <div className="mt-5 rounded-3xl bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">{error}</div>;
@@ -1645,11 +1692,17 @@ function SimpleOfficeForm({type,userId,say,openList}:{type:SimpleOfficeType;user
     const amount=Number(form.get("amount")||0);
     const date=String(form.get("written_date")||koreaDateKey());
     const category=String(form.get("category")||"").trim();
-    const {error}=await supabase.from("business_documents").insert({
+    const simpleRow={
       document_type:type,company,recipient_email:String(form.get("email")||"").trim(),
       item_name:title,model_name:category,quantity:1,unit_price:amount,memo:body,created_by:userId,
-    });
+    };
+    const {error}=await supabase.from("business_documents").insert(simpleRow);
     if(error){say(`${meta.label}를 저장하지 못했습니다`);return}
+    const savedAt=new Date().toISOString();
+    cacheBusinessDocuments([{
+      id:`local-${savedAt}-${type}`,document_type:type,company:simpleRow.company,recipient_email:simpleRow.recipient_email,
+      item_name:simpleRow.item_name,model_name:simpleRow.model_name,quantity:1,unit_price:simpleRow.unit_price,memo:simpleRow.memo,created_at:savedAt,
+    }]);
     setLastExport({title:meta.label,company,date,headers:[meta.title,meta.category,"상세 내용","금액"],rows:[[title,category||"-",body,`${amount.toLocaleString()}원`]]});
     setSaved(true);say(`${meta.label}가 저장됐습니다`);
   };
@@ -1677,14 +1730,26 @@ function SimpleOfficeList({type}:{type:SimpleOfficeType}){
   const [query,setQuery]=useState("");
   useEffect(()=>{
     let active=true;
-    supabase.from("business_documents").select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
-      .eq("document_type",type).order("created_at",{ascending:false}).then(({data,error})=>{
-        if(!active)return;
-        if(error)setError(`작성한 ${meta.label}를 불러오지 못했습니다`);
-        else setDocuments((data??[]) as BusinessDocument[]);
-        setLoading(false);
-      });
-    return()=>{active=false};
+    const load=async()=>{
+      const local=readLocalBusinessDocuments().filter(row=>row.document_type===type);
+      const {data,error}=await supabase.from("business_documents")
+        .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
+        .eq("document_type",type).order("created_at",{ascending:false});
+      if(!active)return;
+      if(error){
+        setDocuments(local);
+        setError(local.length?"":`작성한 ${meta.label}를 불러오지 못했습니다`);
+      }else{
+        setDocuments(mergeBusinessDocuments((data??[]) as BusinessDocument[],local));
+        setError("");
+      }
+      setLoading(false);
+    };
+    void load();
+    const onVisible=()=>{ if(document.visibilityState==="visible") void load(); };
+    window.addEventListener("focus",load);
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>{active=false;window.removeEventListener("focus",load);document.removeEventListener("visibilitychange",onVisible)};
   },[type,meta.label]);
   const filtered=useMemo(()=>{
     const keyword=query.trim().toLowerCase();
@@ -1777,17 +1842,28 @@ function EstimateList({type}:{type:"estimate"|"transaction"}){
   const [query,setQuery]=useState("");
   useEffect(()=>{
     let active=true;
-    supabase.from("business_documents")
-      .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
-      .eq("document_type",type)
-      .order("created_at",{ascending:false})
-      .then(({data,error})=>{
-        if(!active) return;
-        if(error) setError(`작성한 ${documentLabel}를 불러오지 못했습니다`);
-        else setDocuments((data??[]) as BusinessDocument[]);
-        setLoading(false);
-      });
-    return()=>{active=false};
+    const load=async()=>{
+      const local=readLocalBusinessDocuments().filter(row=>row.document_type===type);
+      const {data,error}=await supabase.from("business_documents")
+        .select("id,document_type,company,recipient_email,item_name,model_name,quantity,unit_price,memo,created_at")
+        .eq("document_type",type)
+        .order("created_at",{ascending:false});
+      if(!active) return;
+      if(error){
+        setDocuments(local);
+        setError(local.length?"":`작성한 ${documentLabel}를 불러오지 못했습니다`);
+      }else{
+        const remote=(data??[]) as BusinessDocument[];
+        setDocuments(mergeBusinessDocuments(remote,local));
+        setError("");
+      }
+      setLoading(false);
+    };
+    void load();
+    const onVisible=()=>{ if(document.visibilityState==="visible") void load(); };
+    window.addEventListener("focus",load);
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>{ active=false; window.removeEventListener("focus",load); document.removeEventListener("visibilitychange",onVisible); };
   },[type,documentLabel]);
   const groups=useMemo(()=>{
     const grouped=new Map<string,BusinessDocument[]>();
@@ -1877,6 +1953,12 @@ function DocumentForm({type,userId,say,openEstimateList}:{type:"estimate"|"trans
     })).filter(row=>row.item_name);
     const{error}=await supabase.from("business_documents").insert(rows);
     if(error){say(`${label}를 저장하지 못했습니다`);return}
+    const savedAt=new Date().toISOString();
+    const localRows:BusinessDocument[]=rows.map((row,index)=>({
+      id:`local-${savedAt}-${index}`,document_type:row.document_type,company:row.company,recipient_email:row.recipient_email,
+      item_name:row.item_name,model_name:row.model_name,quantity:row.quantity,unit_price:row.unit_price,memo:row.memo,created_at:savedAt,
+    }));
+    cacheBusinessDocuments(localRows);
     const exportSupply=rows.reduce((sum,row)=>sum+Number(row.quantity)*Number(row.unit_price),0);
     const exportTax=Math.round(exportSupply*.1);
     setLastExport({
