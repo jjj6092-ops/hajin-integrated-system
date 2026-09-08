@@ -296,9 +296,20 @@ export default function Page() {
     }, 10000);
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       clearTimeout(timer);
       setInitError("");
+      if (
+        event === "INITIAL_SESSION" &&
+        session &&
+        localStorage.getItem("hajin-auto-login") !== "true" &&
+        sessionStorage.getItem("hajin-session-active") !== "true"
+      ) {
+        void supabase.auth.signOut();
+        setUser(null);
+        setAuthReady(true);
+        return;
+      }
       setUser(session?.user ?? null);
       setAuthReady(true);
     });
@@ -532,17 +543,17 @@ export default function Page() {
         {view !== "calendar" && <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
             {view === "home" ? (
-              <div className="relative size-10 shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-slate-300">
+              <div className="relative size-11 shrink-0 bg-transparent">
                 <img
-                  src="/hajin-logo.jpg"
+                  src="/hajin-emblem-silver.jpg"
                   alt="HAJIN"
                   className="h-full w-full object-contain"
                 />
               </div>
             ) : (
-              <div className="relative size-10 shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-slate-300">
+              <div className="relative size-11 shrink-0 bg-transparent">
                 <img
-                  src="/hajin-logo.jpg"
+                  src="/hajin-emblem-silver.jpg"
                   alt="HAJIN"
                   className="h-full w-full object-contain"
                 />
@@ -653,9 +664,9 @@ function AuthLoading() {
   return (
     <main className="grid min-h-screen place-items-center bg-[#eaf0f6]">
       <div className="text-center">
-        <div className="mx-auto size-16 overflow-hidden rounded-full bg-black shadow-lg ring-1 ring-slate-300">
+        <div className="mx-auto size-20 bg-transparent drop-shadow-lg">
           <img
-            src="/hajin-logo.jpg"
+            src="/hajin-emblem-silver.jpg"
             alt="HAJIN"
             className="h-full w-full object-contain"
           />
@@ -706,8 +717,16 @@ function Login() {
   const [id, setId] = useState(""),
     [password, setPassword] = useState(""),
     [show, setShow] = useState(false),
+    [saveId, setSaveId] = useState(false),
+    [autoLogin, setAutoLogin] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState("");
+  useEffect(() => {
+    const savedId = localStorage.getItem("hajin-saved-id") || "";
+    setId(savedId);
+    setSaveId(Boolean(savedId));
+    setAutoLogin(localStorage.getItem("hajin-auto-login") === "true");
+  }, []);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const clean = id.trim().toLowerCase();
@@ -721,6 +740,11 @@ function Login() {
     }
     setLoading(true);
     setError("");
+    if (saveId) localStorage.setItem("hajin-saved-id", clean);
+    else localStorage.removeItem("hajin-saved-id");
+    if (autoLogin) localStorage.setItem("hajin-auto-login", "true");
+    else localStorage.removeItem("hajin-auto-login");
+    sessionStorage.setItem("hajin-session-active", "true");
     const { error } = await supabase.auth.signInWithPassword({
       email: `${clean}@hajin.internal`,
       password,
@@ -734,8 +758,8 @@ function Login() {
       <div aria-hidden="true" className="absolute -bottom-28 -right-24 size-80 rounded-full bg-cyan-300/15 blur-3xl"/>
       <div className="relative mx-auto max-w-md">
         <section className="pt-[7vh] text-center text-white">
-          <div className="mx-auto size-36 overflow-hidden rounded-full border border-white/20 bg-black shadow-2xl shadow-black/40">
-            <img src="/hajin-logo.jpg" alt="HAJIN" className="h-full w-full object-contain"/>
+          <div className="mx-auto size-44 bg-transparent drop-shadow-2xl">
+            <img src="/hajin-emblem-silver.jpg" alt="HAJIN" className="h-full w-full object-contain"/>
           </div>
           <h1 className="mt-6 text-3xl font-black tracking-tight">하진그룹</h1>
           <p className="mt-2 text-sm font-bold text-blue-100/90">
@@ -778,6 +802,26 @@ function Login() {
               </button>
             </div>
           </label>
+          <div className="grid grid-cols-2 items-center gap-3">
+            <label className="order-1 flex cursor-pointer items-center justify-start gap-2 text-sm font-black text-slate-700">
+              <input
+                type="checkbox"
+                checked={saveId}
+                onChange={(event) => setSaveId(event.target.checked)}
+                className="size-5 rounded border-slate-300 accent-[#1855a6]"
+              />
+              아이디 저장
+            </label>
+            <label className="order-2 flex cursor-pointer items-center justify-end gap-2 text-sm font-black text-slate-700">
+              <input
+                type="checkbox"
+                checked={autoLogin}
+                onChange={(event) => setAutoLogin(event.target.checked)}
+                className="size-5 rounded border-slate-300 accent-[#1855a6]"
+              />
+              자동 로그인
+            </label>
+          </div>
           {error && (
             <p
               role="alert"
