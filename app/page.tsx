@@ -1118,9 +1118,9 @@ function MonthlyCalendar({jobs,expand}:{jobs:Job[];open:(j:Job)=>void;expand:()=
           <CalendarDays size={28}/>
         </div>
         <div className="min-w-0">
-          <p className="text-xs font-bold text-blue-100">{month + 1}월 등록 일정 {monthJobs.length}건</p>
+          <p className="text-xs font-bold text-blue-100">{month}월 등록 일정 {monthJobs.length}건</p>
           <p className="mt-1 text-xl font-black">{month}월 일정 달력 크게보기</p>
-          <p className="mt-1 text-xs font-bold text-blue-100">{month + 1}월 총완료 {monthCompleted}건, 미완료 {monthIncomplete}건</p>
+          <p className="mt-1 text-xs font-bold text-blue-100">{month}월 총완료 {monthCompleted}건, 미완료 {monthIncomplete}건</p>
         </div>
       </div>
       <ChevronRight className="shrink-0" size={24}/>
@@ -1279,22 +1279,21 @@ function CalendarScreen({jobs,open,close}:{jobs:Job[];open:(j:Job)=>void;close:(
         </div>
       </section>
       <div className="space-y-3 pb-8">
-        {selectedJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className={`w-full rounded-3xl border p-5 text-left shadow-sm ${job.status==="처리완료"?"border-emerald-200 bg-emerald-50":"border-slate-200 bg-white"}`}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className={`text-xl font-black ${job.status==="처리완료"?"text-emerald-800":"text-slate-950"}`}>{displayTime(schedule.time)}</p>
-              <h3 className="mt-1 break-keep text-lg font-black">{job.company||"고객사 미입력"}</h3>
-              <p className="mt-1 break-keep text-sm font-bold text-slate-600">{job.site||"현장 위치 미입력"}</p>
+        {selectedJobs.map(({job,schedule})=><button key={job.id} type="button" onClick={()=>open(job)} className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm ${job.status==="처리완료"?"border-emerald-200 bg-emerald-50":"border-slate-200 bg-white"}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={`shrink-0 text-lg font-black ${job.status==="처리완료"?"text-emerald-800":"text-slate-950"}`}>{displayTime(schedule.time)}</span>
+                <h3 className="truncate text-base font-black">{job.company||"고객사 미입력"}</h3>
+              </div>
+              <p className="mt-1 truncate text-xs font-bold text-slate-500">{job.site||"현장 위치 미입력"} · {job.machine||"장비 미입력"}</p>
+              <p className="mt-1 truncate text-sm font-bold text-slate-800">{job.worker||"미배정"} · {job.issue||"내용 없음"}</p>
             </div>
-            <span className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${badge[job.status]}`}>{job.status}</span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className={`rounded-full px-2.5 py-1 text-[11px] font-black ${badge[job.status]}`}>{job.status}</span>
+              <ChevronRight size={17} className="text-blue-700"/>
+            </div>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/70 p-3 text-sm">
-            <div><span className="block text-[11px] font-bold text-slate-400">출동기사</span><b className="mt-0.5 block">{job.worker||"미배정"}</b></div>
-            <div><span className="block text-[11px] font-bold text-slate-400">장비 / 모델</span><b className="mt-0.5 block break-keep">{job.machine||"미입력"}</b></div>
-            <div className="col-span-2"><span className="block text-[11px] font-bold text-slate-400">접수 내용</span><b className="mt-0.5 block break-keep leading-5">{job.issue||"내용 없음"}</b></div>
-            {job.resolution&&<div className="col-span-2"><span className="block text-[11px] font-bold text-slate-400">처리 내용</span><b className="mt-0.5 block break-keep leading-5">{job.resolution}</b></div>}
-          </div>
-          <div className="mt-3 flex items-center justify-end gap-1 text-xs font-black text-blue-700">상세보기 <ChevronRight size={15}/></div>
         </button>)}
         {selectedJobs.length===0&&<div className="rounded-3xl bg-white px-5 py-12 text-center shadow-sm"><CalendarDays className="mx-auto text-slate-300" size={34}/><p className="mt-3 text-sm font-black text-slate-500">등록된 일정이 없습니다</p></div>}
       </div>
