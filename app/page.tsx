@@ -1008,27 +1008,30 @@ function Dashboard({
   const [openOffice,setOpenOffice]=useState<string | null>(null);
   const nums = [
     [
-      "오늘 방문",
+      "접수등록완료",
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey).length,
       CalendarDays,
       "bg-blue-50 text-blue-700",
       "todayVisit" as View,
     ],
     [
-      "오늘 미처리",
+      "미처리",
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status !== "처리완료").length,
       ToolCase,
       "bg-rose-50 text-rose-700",
       "todayPending" as View,
     ],
     [
-      "오늘 완료",
+      "작업완료",
       jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status === "처리완료").length,
       History,
       "bg-emerald-50 text-emerald-700",
       "todayComplete" as View,
     ],
   ] as const;
+  const [todayYear, todayMonth, todayDay] = todayKey.split("-").map(Number);
+  const todayWeekday = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"][new Date(todayYear, todayMonth - 1, todayDay).getDay()];
+  const todayLabel = `${todayYear}년 ${todayMonth}월 ${todayDay}일 ${todayWeekday}`;
   const officeFolders: Array<{
     key:string;
     label:string;
@@ -1055,26 +1058,31 @@ function Dashboard({
           className="block aspect-[3/1] w-full object-cover"
         />
       </section>
-      <section className="mt-4 grid grid-cols-3 gap-3">
-        {nums.map(([label, n, Icon, style, targetView]) => (
-          <button
-            key={label}
-            type="button"
-            onClick={() => setView(targetView)}
-            className="relative z-10 touch-manipulation rounded-2xl bg-white p-3 text-left shadow-sm active:scale-[0.98]"
-          >
-            <div
-              className={`grid size-9 place-items-center rounded-xl ${style}`}
+      <section className="mt-4 rounded-[24px] bg-white p-3 shadow-sm">
+        <div className="mb-3 px-1">
+          <p className="text-sm font-black text-slate-900">{todayLabel}</p>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {nums.map(([label, n, Icon, style, targetView]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setView(targetView)}
+              className="relative z-10 touch-manipulation rounded-2xl bg-slate-50 p-3 text-left ring-1 ring-slate-100 active:scale-[0.98]"
             >
-              <Icon size={18} />
-            </div>
-            <p className="mt-3 text-2xl font-black">
-              {n}
-              <span className="text-sm">건</span>
-            </p>
-            <p className="text-xs text-slate-500">{label}</p>
-          </button>
-        ))}
+              <div
+                className={`grid size-9 place-items-center rounded-xl ${style}`}
+              >
+                <Icon size={18} />
+              </div>
+              <p className="mt-3 text-2xl font-black">
+                {n}
+                <span className="text-sm">건</span>
+              </p>
+              <p className="text-xs font-bold text-slate-600">{label}</p>
+            </button>
+          ))}
+        </div>
       </section>
       <MonthlyCalendar jobs={jobs} open={open} expand={() => setView("calendar")} />
       <Title text="사무 업무" />
@@ -1505,41 +1513,54 @@ function TodayJobs({
   close: () => void;
 }) {
   const todayKey = koreaDateKey();
-  const todayJobs = jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey);
-  const visible = todayJobs
-    .filter((j) => mode === "visit" ? true : mode === "pending" ? j.status !== "처리완료" : j.status === "처리완료")
-    .sort((a,b) => (scheduleOf(a.date).time || "99:99").localeCompare(scheduleOf(b.date).time || "99:99"));
-  const title = mode === "visit" ? "오늘 방문 일정" : mode === "pending" ? "오늘 미처리 일정" : "오늘 완료 일정";
-  const subtitle = mode === "visit" ? "오늘 방문 예정인 전체 일정" : mode === "pending" ? "오늘 일정 중 아직 완료되지 않은 업무" : "오늘 일정 중 처리 완료된 업무";
+  const visible = useMemo(() => {
+    const list = jobs.filter((j) => {
+      const schedule = scheduleOf(j.date || "");
+      if (schedule.dateKey !== todayKey) return false;
+      if (mode === "pending") return j.status !== "처리완료";
+      if (mode === "complete") return j.status === "처리완료";
+      return true;
+    });
+    return [...list].sort((a, b) => {
+      const at = scheduleOf(a.date || "").time || "99:99";
+      const bt = scheduleOf(b.date || "").time || "99:99";
+      return at.localeCompare(bt);
+    });
+  }, [jobs, mode, todayKey]);
+
+  const title =
+    mode === "visit" ? "접수등록완료" : mode === "pending" ? "미처리" : "작업완료";
+  const subtitle =
+    mode === "visit"
+      ? "오늘 접수 등록된 전체 일정"
+      : mode === "pending"
+        ? "오늘 일정 중 아직 완료되지 않은 업무"
+        : "오늘 일정 중 작업 완료된 업무";
+
   return (
-    <section className="mt-5">
+    <div className="mt-5">
       <div className="mb-4 flex items-center gap-3">
-        <button type="button" onClick={close} className="grid size-10 place-items-center rounded-2xl bg-white shadow-sm"><ChevronLeft size={20}/></button>
-        <div>
+        <button
+          type="button"
+          onClick={close}
+          className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white shadow-sm"
+          aria-label="홈으로 돌아가기"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <div className="min-w-0">
           <h2 className="text-xl font-black text-slate-900">{title}</h2>
           <p className="mt-0.5 text-xs text-slate-500">{subtitle} · 총 {visible.length}건</p>
         </div>
       </div>
+
       <div className="space-y-3">
         {visible.map((j) => (
-          <button key={j.id} type="button" onClick={() => open(j)} className="w-full rounded-2xl bg-white p-4 text-left shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <b className="truncate text-base">{j.company}</b>
-                  <span className={`rounded-full px-2 py-1 text-[10px] font-black ${badge[j.status]}`}>{j.status}</span>
-                </div>
-                <p className="mt-2 text-sm font-bold text-slate-800">{displayTime(scheduleOf(j.date).time) || "시간 미정"}{j.site ? ` · ${j.site}` : ""}</p>
-                {j.worker && <p className="mt-1 text-xs text-slate-500">출동기사 {j.worker}</p>}
-                <p className="mt-2 line-clamp-2 text-sm text-slate-600">{j.issue}</p>
-              </div>
-              <ChevronRight className="mt-1 shrink-0 text-slate-300" size={20}/>
-            </div>
-          </button>
+          <Card key={String(j.id)} j={j} open={() => open(j)} />
         ))}
         {visible.length === 0 && <Empty text="해당하는 오늘 일정이 없습니다" />}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -2012,7 +2033,7 @@ function OfficeExportButtons({data}:{data:OfficeExportData}){
   return <div className="mt-3 grid grid-cols-2 gap-2">
     <button type="button" onClick={()=>previewOfficeDocument(data)} className="rounded-xl bg-slate-800 px-2 py-3 text-xs font-black text-white">문서 보기</button>
     <button type="button" onClick={()=>exportOfficeDocument("pdf",data)} className="rounded-xl bg-[#1855a6] px-2 py-3 text-xs font-black text-white">PDF 출력</button>
-    <button type="button" onClick={()=>exportOfficeDocument("hangul",data)} className="rounded-xl bg-emerald-600 px-2 py-3 text-xs font-black text-white">한글 문서</button>
+    <button type="button" onClick={()=>exportOfficeDocument("hangul",data)} className="rounded-xl bg-emerald-600 px-2 py-3 text-xs font-black text-white">한글 출력</button>
     <button type="button" onClick={()=>exportOfficeDocument("excel",data)} className="rounded-xl bg-green-700 px-2 py-3 text-xs font-black text-white">엑셀 출력</button>
   </div>;
 }
