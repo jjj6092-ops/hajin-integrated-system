@@ -1841,7 +1841,7 @@ function ProposalList(){
   },[documents,query]);
   if(!documents.length) return <div className="mt-5"><Empty text="아직 작성된 제안서가 없습니다"/></div>;
   return <div className="mt-5 space-y-3">
-    <label className="relative block"><Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19}/><input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0 pl-11" placeholder="제안처·제안 제목·구분·내용 검색"/></label>
+    <label className="relative block"><Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19}/><input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0" style={{paddingLeft:"3.25rem"}} placeholder="제안처·제안 제목·구분·내용 검색"/></label>
     <p className="text-sm font-bold text-slate-500">총 {documents.length}개 중 {filtered.length}개의 제안서가 조회됩니다</p>
     {!filtered.length&&<Empty text="검색 조건에 맞는 제안서가 없습니다"/>}
     {filtered.map(document=>{
@@ -1952,7 +1952,7 @@ function SimpleOfficeList({type}:{type:SimpleOfficeType}){
   if(error)return <div className="mt-5 rounded-3xl bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">{error}</div>;
   if(!documents.length)return <div className="mt-5"><Empty text={`아직 작성된 ${meta.label}가 없습니다`}/></div>;
   return <div className="mt-5 space-y-3">
-    <label className="relative block"><Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19}/><input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0 pl-11" placeholder={`${meta.party}·${meta.title}·구분·내용 검색`}/></label>
+    <label className="relative block"><Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19}/><input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0" style={{paddingLeft:"3.25rem"}} placeholder={`${meta.party}·${meta.title}·구분·내용 검색`}/></label>
     <p className="text-sm font-bold text-slate-500">총 {documents.length}개 중 {filtered.length}개의 {meta.label}가 조회됩니다</p>
     {!filtered.length&&<Empty text={`검색 조건에 맞는 ${meta.label}가 없습니다`}/>}
     {filtered.map(document=>{
@@ -2001,8 +2001,16 @@ const exportOfficeDocument=(format:"pdf"|"hangul"|"excel",data:OfficeExportData)
     .map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(",")).join("\r\n");
   downloadBlob(`${base}.csv`,new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8"}));
 };
+const previewOfficeDocument=(data:OfficeExportData)=>{
+  const popup=window.open("","_blank","width=900,height=1000");
+  if(!popup){window.alert("문서 보기 창을 열 수 없습니다. 팝업 차단을 해제해주세요.");return;}
+  popup.document.write(officeExportHtml(data).replace("</body>",'<div class="actions"><button onclick="window.print()">인쇄 · PDF 저장</button></div></body>'));
+  popup.document.close();
+  popup.focus();
+};
 function OfficeExportButtons({data}:{data:OfficeExportData}){
-  return <div className="mt-3 grid grid-cols-3 gap-2">
+  return <div className="mt-3 grid grid-cols-2 gap-2">
+    <button type="button" onClick={()=>previewOfficeDocument(data)} className="rounded-xl bg-slate-800 px-2 py-3 text-xs font-black text-white">문서 보기</button>
     <button type="button" onClick={()=>exportOfficeDocument("pdf",data)} className="rounded-xl bg-[#1855a6] px-2 py-3 text-xs font-black text-white">PDF 출력</button>
     <button type="button" onClick={()=>exportOfficeDocument("hangul",data)} className="rounded-xl bg-emerald-600 px-2 py-3 text-xs font-black text-white">한글 문서</button>
     <button type="button" onClick={()=>exportOfficeDocument("excel",data)} className="rounded-xl bg-green-700 px-2 py-3 text-xs font-black text-white">엑셀 출력</button>
@@ -2076,7 +2084,7 @@ function EstimateList({type}:{type:"estimate"|"transaction"}){
   return <div className="mt-5 space-y-3">
     <label className="relative block">
       <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19}/>
-      <input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0 pl-11" placeholder={`${documentLabel} 거래처·품목·모델명 검색`}/>
+      <input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0" style={{paddingLeft:"3.25rem"}} placeholder={`${documentLabel} 거래처·품목·모델명 검색`}/>
     </label>
     <p className="text-sm font-bold text-slate-500">총 {groups.length}개 중 {filteredGroups.length}개의 {documentLabel}가 조회됩니다</p>
     {!filteredGroups.length&&<Empty text={`검색 조건에 맞는 ${documentLabel}가 없습니다`}/>}
