@@ -87,7 +87,8 @@ type View =
   | "proposal"
   | "proposalList"
   | "transaction"
-  | "mail";
+  | "mail"
+  | "notifications";
 const badge: Record<Status, string> = {
   접수: "bg-slate-100 text-slate-700",
   방문예정: "bg-blue-50 text-blue-700",
@@ -228,6 +229,23 @@ const holidaysOf=(year:number)=>{
   return result;
 };
 const holidayOf=(dateKey:string)=>holidaysOf(Number(dateKey.slice(0,4)))[dateKey]||"";
+const notificationJobsOf = (jobs: Job[]) => {
+  const today = koreaDateKey();
+  return jobs
+    .filter((job) => {
+      if (job.status === "처리완료") return false;
+      const schedule = scheduleOf(job.date);
+      return (
+        (schedule.dateKey && schedule.dateKey <= today) ||
+        ["접수", "부품대기", "재방문"].includes(job.status)
+      );
+    })
+    .sort((a, b) => {
+      const aDate = scheduleOf(a.date).dateKey || "9999-12-31";
+      const bDate = scheduleOf(b.date).dateKey || "9999-12-31";
+      return aDate.localeCompare(bDate);
+    });
+};
 
 export default function Page() {
   const [user, setUser] = useState<User | null>(null),
@@ -241,6 +259,35 @@ export default function Page() {
     [query, setQuery] = useState(""),
     [toast, setToast] = useState(""),
     [loadError, setLoadError] = useState("");
+  const viewRef = useRef<View>("home");
+  const navigate = useCallback((nextView: View) => {
+    if (viewRef.current === nextView) return;
+    window.history.pushState(
+      { ...window.history.state, hajinView: nextView },
+      "",
+    );
+    viewRef.current = nextView;
+    setView(nextView);
+  }, []);
+  useEffect(() => {
+    window.history.replaceState(
+      { ...window.history.state, hajinView: "home" },
+      "",
+    );
+    const handleBack = (event: PopStateEvent) => {
+      const nextView = event.state?.hajinView as View | undefined;
+      const validViews: View[] = [
+        "home", "calendar", "register", "progress", "detail", "photos",
+        "estimate", "estimateList", "proposal", "proposalList",
+        "transaction", "mail", "notifications",
+      ];
+      const target = nextView && validViews.includes(nextView) ? nextView : "home";
+      viewRef.current = target;
+      setView(target);
+    };
+    window.addEventListener("popstate", handleBack);
+    return () => window.removeEventListener("popstate", handleBack);
+  }, []);
   useEffect(() => {
     const timer = setTimeout(() => {
       setInitError("로그인 확인이 지연되고 있습니다");
@@ -333,13 +380,13 @@ export default function Page() {
     const officeMenu = (event: MouseEvent) => {
       const button = (event.target as HTMLElement).closest("button");
       const label = button?.textContent?.trim();
-      if (label === "견적서") setView("estimate");
-      if (label === "거래명세") setView("transaction");
-      if (label === "메일 보내기") setView("mail");
+      if (label === "견적서") navigate("estimate");
+      if (label === "거래명세") navigate("transaction");
+      if (label === "메일 보내기") navigate("mail");
     };
     document.addEventListener("click", officeMenu);
     return () => document.removeEventListener("click", officeMenu);
-  }, []);
+  }, [navigate]);
   const filtered = useMemo(
     () => jobs.filter((j) => Object.values(j).join(" ").includes(query)),
     [jobs, query],
@@ -350,12 +397,15 @@ export default function Page() {
   };
   const open = (j: Job) => {
     setSelected(j);
-    setView("detail");
+    navigate("detail");
   };
   const add = async (f: FormData) => {
     if (!user) return;
     const company = String(f.get("company") || "").trim(),
       issue = String(f.get("issue") || "").trim();
+    const intakePhotos = f
+      .getAll("intake_photos")
+      .filter((value): value is File => value instanceof File && value.size > 0);
     if (!company || !issue) {
       say("고객사와 증상을 입력해주세요");
       return;
@@ -387,10 +437,25 @@ export default function Page() {
       return;
     }
     const j = toJob(data as JobRow);
+    let uploadedPhotos = 0;
+    for (const [index, file] of intakePhotos.entries()) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${j.dbId}/접수사진/${Date.now()}-${index}-${safeName}`;
+      const { error: photoError } = await supabase.storage
+        .from("as-job-photos")
+        .upload(path, file, { upsert: false });
+      if (!photoError) uploadedPhotos += 1;
+    }
     setJobs((x) => [j, ...x]);
     setSelected(j);
-    setView("progress");
-    say("A/S 접수가 등록됐습니다");
+    navigate("progress");
+    if (intakePhotos.length === 0) {
+      say("A/S 접수가 등록됐습니다");
+    } else if (uploadedPhotos === intakePhotos.length) {
+      say(`A/S 접수와 접수사진 ${uploadedPhotos}장이 등록됐습니다`);
+    } else {
+      say(`접수는 완료됐지만 사진은 ${uploadedPhotos}/${intakePhotos.length}장 저장됐습니다`);
+    }
   };
   const updateStatus = async (s: Status) => {
     if (!user || !selected) return;
@@ -460,13 +525,14 @@ export default function Page() {
   if (!profile?.active)
     return <PendingAccount id={user.email?.split("@")[0] ?? "직원"} />;
   const staffName = profile.display_name || profile.employee_id;
+  const notificationCount = notificationJobsOf(jobs).length;
   return (
     <main className="min-h-screen bg-[#eaf0f6] text-slate-900">
       <div className={`mx-auto min-h-screen bg-[#f8fafc] shadow-2xl ${view === "calendar" ? "max-w-3xl" : "max-w-md"}`}>
         {view !== "calendar" && <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
             {view === "home" ? (
-              <div className="relative h-10 w-20 shrink-0 overflow-hidden rounded-xl bg-[#20252b] shadow-sm ring-1 ring-slate-300">
+              <div className="relative size-10 shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-slate-300">
                 <img
                   src="/hajin-logo.jpg"
                   alt="HAJIN"
@@ -474,8 +540,12 @@ export default function Page() {
                 />
               </div>
             ) : (
-              <div className="grid size-10 place-items-center rounded-xl bg-[#df3548] font-black text-white">
-                H
+              <div className="relative size-10 shrink-0 overflow-hidden rounded-full bg-black shadow-sm ring-1 ring-slate-300">
+                <img
+                  src="/hajin-logo.jpg"
+                  alt="HAJIN"
+                  className="h-full w-full object-contain"
+                />
               </div>
             )}
             <div>
@@ -494,6 +564,7 @@ export default function Page() {
                     proposalList: "작성한 제안서",
                     transaction: "거래명세서",
                     mail: "메일 보내기",
+                    notifications: "알림",
                   }[view]
                 }
               </h1>
@@ -503,10 +574,15 @@ export default function Page() {
           <div className="flex">
             <button
               aria-label="알림"
+              onClick={() => navigate("notifications")}
               className="relative grid size-10 place-items-center"
             >
               <Bell size={20} />
-              <i className="absolute right-2 top-2 size-2 rounded-full bg-red-500" />
+              {notificationCount > 0 && (
+                <span className="absolute right-0 top-0 grid min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[10px] font-black leading-5 text-white">
+                  {notificationCount > 99 ? "99+" : notificationCount}
+                </span>
+              )}
             </button>
             <button
               aria-label="로그아웃"
@@ -524,10 +600,10 @@ export default function Page() {
             </p>
           )}
           {view === "home" && (
-            <Dashboard jobs={jobs} setView={setView} open={open} />
+            <Dashboard jobs={jobs} setView={navigate} open={open} />
           )}{" "}
           {view === "calendar" && (
-            <CalendarScreen jobs={jobs} open={open} close={() => setView("home")} />
+            <CalendarScreen jobs={jobs} open={open} close={() => navigate("home")} />
           )}{" "}
           {view === "register" && <Register add={add} />}{" "}
           {view === "progress" && (
@@ -549,17 +625,20 @@ export default function Page() {
           )}{" "}
           {view === "photos" && <Photos say={say} />}{" "}
           {view === "estimate" && (
-            <DocumentForm type="estimate" userId={user.id} say={say} openEstimateList={()=>setView("estimateList")} />
+            <DocumentForm type="estimate" userId={user.id} say={say} openEstimateList={()=>navigate("estimateList")} />
           )}{" "}
           {view === "estimateList" && <EstimateList />}{" "}
-          {view === "proposal" && <ProposalForm userId={user.id} say={say} openProposalList={()=>setView("proposalList")} />}{" "}
+          {view === "proposal" && <ProposalForm userId={user.id} say={say} openProposalList={()=>navigate("proposalList")} />}{" "}
           {view === "proposalList" && <ProposalList />}{" "}
           {view === "transaction" && (
             <DocumentForm type="transaction" userId={user.id} say={say} />
           )}{" "}
           {view === "mail" && <MailForm say={say} />}
+          {view === "notifications" && (
+            <Notifications jobs={jobs} open={open} />
+          )}
         </div>
-        {view !== "calendar" && <Nav view={view} setView={setView} />}
+        {view !== "calendar" && <Nav view={view} setView={navigate} />}
       </div>
       {toast && (
         <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-xl">
@@ -574,8 +653,12 @@ function AuthLoading() {
   return (
     <main className="grid min-h-screen place-items-center bg-[#eaf0f6]">
       <div className="text-center">
-        <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#1855a6] text-2xl font-black text-white shadow-lg">
-          H
+        <div className="mx-auto size-16 overflow-hidden rounded-full bg-black shadow-lg ring-1 ring-slate-300">
+          <img
+            src="/hajin-logo.jpg"
+            alt="HAJIN"
+            className="h-full w-full object-contain"
+          />
         </div>
         <p className="mt-4 text-sm font-bold text-slate-500">데이터 확인 중</p>
       </div>
@@ -651,7 +734,7 @@ function Login() {
       <div aria-hidden="true" className="absolute -bottom-28 -right-24 size-80 rounded-full bg-cyan-300/15 blur-3xl"/>
       <div className="relative mx-auto max-w-md">
         <section className="pt-[7vh] text-center text-white">
-          <div className="mx-auto flex h-24 w-64 items-center justify-center overflow-hidden rounded-[26px] border border-white/15 bg-[#181d24]/90 px-4 shadow-2xl shadow-black/40">
+          <div className="mx-auto size-36 overflow-hidden rounded-full border border-white/20 bg-black shadow-2xl shadow-black/40">
             <img src="/hajin-logo.jpg" alt="HAJIN" className="h-full w-full object-contain"/>
           </div>
           <h1 className="mt-6 text-3xl font-black tracking-tight">하진그룹</h1>
@@ -716,6 +799,63 @@ function Login() {
         </form>
       </div>
     </main>
+  );
+}
+
+function Notifications({ jobs, open }: { jobs: Job[]; open: (job: Job) => void }) {
+  const today = koreaDateKey();
+  const items = notificationJobsOf(jobs);
+  return (
+    <section className="mt-5 space-y-3">
+      <div className="rounded-[24px] bg-gradient-to-br from-[#173f82] to-[#2774d7] p-5 text-white shadow-lg shadow-blue-900/15">
+        <p className="text-sm font-bold text-blue-100">확인할 알림</p>
+        <p className="mt-1 text-3xl font-black">{items.length}건</p>
+      </div>
+      {items.length === 0 ? (
+        <div className="rounded-[24px] bg-white px-5 py-12 text-center shadow-sm">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl bg-blue-50 text-blue-600">
+            <Bell size={25} />
+          </div>
+          <p className="mt-4 font-black">새 알림이 없습니다</p>
+          <p className="mt-1 text-sm text-slate-500">확인할 일정과 미완료 작업이 생기면 표시됩니다.</p>
+        </div>
+      ) : (
+        items.map((job) => {
+          const schedule = scheduleOf(job.date);
+          const overdue = Boolean(schedule.dateKey && schedule.dateKey < today);
+          const isToday = schedule.dateKey === today;
+          const label = overdue ? "기한 지남" : isToday ? "오늘 방문" : job.status;
+          const color = overdue
+            ? "bg-red-50 text-red-700"
+            : isToday
+              ? "bg-blue-50 text-blue-700"
+              : badge[job.status];
+          return (
+            <button
+              key={job.dbId}
+              type="button"
+              onClick={() => open(job)}
+              className="flex w-full items-center gap-3 rounded-[22px] bg-white p-4 text-left shadow-sm transition active:scale-[0.99]"
+            >
+              <span className={`grid size-11 shrink-0 place-items-center rounded-2xl ${color}`}>
+                {isToday ? <CalendarDays size={21} /> : <Bell size={21} />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2">
+                  <b className="truncate text-sm">{job.company}</b>
+                  <em className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black not-italic ${color}`}>{label}</em>
+                </span>
+                <span className="mt-1 block truncate text-xs text-slate-500">
+                  {[job.site, displayTime(schedule.time), job.worker].filter(Boolean).join(" · ") || "일정 정보 없음"}
+                </span>
+                <span className="mt-1 block truncate text-xs font-bold text-slate-700">{job.issue}</span>
+              </span>
+              <ChevronRight className="shrink-0 text-slate-300" size={19} />
+            </button>
+          );
+        })
+      )}
+    </section>
   );
 }
 
@@ -1030,6 +1170,7 @@ function Empty({ text }: { text: string }) {
 function Register({ add }: { add: (f: FormData) => Promise<void> }) {
   const [companyChoice,setCompanyChoice]=useState("");
   const [otherCompany,setOtherCompany]=useState("");
+  const [intakePhotoCount,setIntakePhotoCount]=useState(0);
   return (
     <form action={add} className="mt-5 space-y-4">
       <Box t="고객 정보">
@@ -1070,6 +1211,26 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
           </select>
         </label>
         <Field n="worker" l="출동기사" p="예: 우제일" />
+      </Box>
+      <Box t="접수사진">
+        <p className="text-sm leading-6 text-slate-500">고장 부위나 장비 상태를 촬영하거나 사진첩에서 여러 장 선택할 수 있습니다.</p>
+        <label className="flex min-h-[92px] cursor-pointer items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50 text-blue-700 transition active:scale-[0.99]">
+          <span className="grid size-11 place-items-center rounded-xl bg-white shadow-sm">
+            <Camera size={22}/>
+          </span>
+          <span>
+            <b className="block text-sm">접수사진 선택</b>
+            <span className="mt-1 block text-xs font-bold text-blue-500">{intakePhotoCount > 0 ? `${intakePhotoCount}장 선택됨` : "촬영 또는 사진 선택"}</span>
+          </span>
+          <input
+            type="file"
+            name="intake_photos"
+            accept="image/*"
+            multiple
+            className="sr-only"
+            onChange={(event)=>setIntakePhotoCount(event.target.files?.length ?? 0)}
+          />
+        </label>
       </Box>
       <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">
         A/S 접수 등록
@@ -1297,6 +1458,7 @@ function Photos({ say }: { say: (s: string) => void }) {
 }
 function ProposalForm({userId,say,openProposalList}:{userId:string;say:(s:string)=>void;openProposalList:()=>void}){
   const [saved,setSaved]=useState(false);
+  const [lastExport,setLastExport]=useState<OfficeExportData|null>(null);
   const save=async(form:FormData)=>{
     const company=String(form.get("company")||"").trim();
     const title=String(form.get("title")||"").trim();
@@ -1314,6 +1476,8 @@ function ProposalForm({userId,say,openProposalList}:{userId:string;say:(s:string
       created_by:userId,
     });
     if(error){say("제안서를 저장하지 못했습니다");return}
+    const amount=Number(form.get("amount")||0);
+    setLastExport({title:"제안서",company,date:String(form.get("proposal_date")||koreaDateKey()),headers:["제안 제목","제안 구분","제안 내용","제안 금액"],rows:[[title,String(form.get("category")||"-").trim()||"-",body,`${amount.toLocaleString()}원`]]});
     setSaved(true);say("제안서가 저장됐습니다");
   };
   return <form action={save} className="mt-5 space-y-4">
@@ -1329,7 +1493,7 @@ function ProposalForm({userId,say,openProposalList}:{userId:string;say:(s:string
       <label className="block text-sm font-bold">제안 금액<input name="amount" type="number" min="0" className="input" placeholder="0"/></label>
     </Box>
     <button className="w-full rounded-2xl bg-rose-600 py-4 font-black text-white shadow-lg">제안서 저장</button>
-    {saved&&<div className="grid grid-cols-2 gap-3"><button type="button" onClick={()=>window.print()} className="rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button><button type="button" onClick={openProposalList} className="rounded-2xl bg-rose-50 py-4 font-black text-rose-700">작성한 제안서 보기</button></div>}
+    {saved&&<>{lastExport&&<OfficeExportButtons data={lastExport}/>}<button type="button" onClick={openProposalList} className="w-full rounded-2xl bg-rose-50 py-4 font-black text-rose-700">작성한 제안서 보기</button></>}
   </form>;
 }
 function ProposalList(){
@@ -1357,6 +1521,7 @@ function ProposalList(){
     <p className="text-sm font-bold text-slate-500">총 {documents.length}개의 제안서가 있습니다</p>
     {documents.map(document=>{
       const writtenAt=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(document.created_at));
+      const exportData:OfficeExportData={title:"제안서",company:document.company,date:writtenAt,headers:["제안 제목","제안 구분","제안 내용","제안 금액"],rows:[[document.item_name,document.model_name||"-",document.memo,`${Number(document.unit_price).toLocaleString()}원`]]};
       return <details key={document.id} className="group overflow-hidden rounded-[22px] bg-white shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
           <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-600"><FileSignature size={21}/></span>
@@ -1368,15 +1533,76 @@ function ProposalList(){
           <p className="mt-4 font-bold text-slate-500">제안 내용</p><p className="mt-1 whitespace-pre-wrap leading-6">{document.memo}</p>
           <p className="mt-4 flex justify-between rounded-xl bg-rose-50 p-3 font-black text-rose-700"><span>제안 금액</span><span>{Number(document.unit_price).toLocaleString()}원</span></p>
           {document.recipient_email&&<p className="mt-3 text-xs text-slate-500">담당자 이메일 · {document.recipient_email}</p>}
+          <OfficeExportButtons data={exportData}/>
         </div>
       </details>;
     })}
   </div>;
 }
+const escapeHtml=(value:unknown)=>String(value??"")
+  .replaceAll("&","&amp;")
+  .replaceAll("<","&lt;")
+  .replaceAll(">","&gt;")
+  .replaceAll('"',"&quot;")
+  .replaceAll("'","&#039;");
+type OfficeExportData={title:string;company:string;date:string;headers:string[];rows:Array<Array<string|number>>;summary?:Array<[string,string]>};
+const safeFileName=(value:string)=>value.replace(/[\\/:*?"<>|]/g,"_").trim()||"하진_문서";
+const downloadBlob=(name:string,blob:Blob)=>{
+  const url=URL.createObjectURL(blob);
+  const anchor=document.createElement("a");
+  anchor.href=url;anchor.download=name;document.body.appendChild(anchor);anchor.click();anchor.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+const officeExportHtml=(data:OfficeExportData)=>{
+  const header=data.headers.map(value=>`<th>${escapeHtml(value)}</th>`).join("");
+  const rows=data.rows.map(row=>`<tr>${row.map(value=>`<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
+  const summary=(data.summary??[]).map(([label,value])=>`<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`).join("");
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>@page{size:A4;margin:16mm}body{font-family:"Malgun Gothic","Noto Sans KR",sans-serif;color:#111827}h1{text-align:center;letter-spacing:8px}.brand{font-size:20px;font-weight:900;border-bottom:3px solid #111827;padding-bottom:14px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #6b7280;padding:8px;font-size:12px;text-align:center;word-break:break-all}th{background:#e5e7eb}.meta th{width:110px}.meta td{text-align:left}.summary{width:330px;margin-left:auto}.summary td{text-align:right;font-weight:700}.actions{text-align:center;margin-top:24px}.actions button{border:0;border-radius:10px;background:#1855a6;color:#fff;padding:13px 28px;font-weight:800}@media print{.actions{display:none}}</style></head><body><div class="brand">HAJIN GROUP</div><h1>${escapeHtml(data.title)}</h1><table class="meta"><tr><th>작성일</th><td>${escapeHtml(data.date)}</td></tr><tr><th>거래처</th><td>${escapeHtml(data.company)}</td></tr></table><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>${summary?`<table class="summary">${summary}</table>`:""}</body></html>`;
+};
+const exportOfficeDocument=(format:"pdf"|"hangul"|"excel",data:OfficeExportData)=>{
+  const base=safeFileName(`${data.company}_${data.title}_${data.date}`);
+  if(format==="pdf"){
+    const popup=window.open("","_blank","width=900,height=1000");
+    if(!popup){window.alert("출력창을 열 수 없습니다. 팝업 차단을 해제해주세요.");return;}
+    popup.document.write(officeExportHtml(data).replace("</body>",'<div class="actions"><button onclick="window.print()">인쇄 · PDF 저장</button></div></body>'));
+    popup.document.close();popup.focus();return;
+  }
+  if(format==="hangul"){
+    downloadBlob(`${base}.doc`,new Blob(["\ufeff",officeExportHtml(data)],{type:"application/msword;charset=utf-8"}));
+    return;
+  }
+  const csv=[data.headers,...data.rows.map(row=>row.map(String)),...(data.summary??[]).map(row=>[row[0],row[1]])]
+    .map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(",")).join("\r\n");
+  downloadBlob(`${base}.csv`,new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8"}));
+};
+function OfficeExportButtons({data}:{data:OfficeExportData}){
+  return <div className="mt-3 grid grid-cols-3 gap-2">
+    <button type="button" onClick={()=>exportOfficeDocument("pdf",data)} className="rounded-xl bg-[#1855a6] px-2 py-3 text-xs font-black text-white">PDF 출력</button>
+    <button type="button" onClick={()=>exportOfficeDocument("hangul",data)} className="rounded-xl bg-emerald-600 px-2 py-3 text-xs font-black text-white">한글 문서</button>
+    <button type="button" onClick={()=>exportOfficeDocument("excel",data)} className="rounded-xl bg-green-700 px-2 py-3 text-xs font-black text-white">엑셀 출력</button>
+  </div>;
+}
+const printEstimate=(items:BusinessDocument[])=>{
+  const first=items[0];
+  if(!first) return;
+  const supply=items.reduce((sum,item)=>sum+Number(item.quantity)*Number(item.unit_price),0);
+  const tax=Math.round(supply*.1);
+  const total=supply+tax;
+  const writtenAt=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(first.created_at));
+  const popup=window.open("","_blank","width=900,height=1000");
+  if(!popup){window.alert("PDF 출력창을 열 수 없습니다. 팝업 차단을 해제해주세요.");return;}
+  const rows=items.map((item,index)=>`<tr><td>${index+1}</td><td class="left">${escapeHtml(item.item_name)}</td><td>${escapeHtml(item.model_name||"-")}</td><td>${Number(item.quantity).toLocaleString()}</td><td class="right">${Number(item.unit_price).toLocaleString()}</td><td class="right">${(Number(item.quantity)*Number(item.unit_price)).toLocaleString()}</td><td class="left">${escapeHtml(item.memo||"")}</td></tr>`).join("");
+  popup.document.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(first.company)} 견적서</title><style>
+    @page{size:A4;margin:16mm}*{box-sizing:border-box}body{margin:0;color:#111827;font-family:Arial,"Noto Sans KR",sans-serif}.sheet{width:100%}.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #111827;padding-bottom:18px}.brand{font-size:22px;font-weight:900;letter-spacing:2px}.title{margin:28px 0;text-align:center;font-size:32px;letter-spacing:12px}.meta{width:100%;border-collapse:collapse;margin-bottom:20px}.meta th,.meta td{border:1px solid #9ca3af;padding:9px;text-align:left;font-size:13px}.meta th{width:110px;background:#f3f4f6}table.items{width:100%;border-collapse:collapse;table-layout:fixed}table.items th,table.items td{border:1px solid #6b7280;padding:8px 6px;text-align:center;font-size:11px;word-break:break-all}table.items th{background:#e5e7eb}table.items .left{text-align:left}table.items .right{text-align:right}.totals{margin:18px 0 0 auto;width:310px;border-collapse:collapse}.totals td{border:1px solid #9ca3af;padding:10px;font-size:13px}.totals td:last-child{text-align:right;font-weight:700}.grand td{background:#dbeafe;color:#1d4ed8;font-size:15px;font-weight:900}.notice{margin-top:35px;border-top:1px solid #d1d5db;padding-top:14px;font-size:11px;color:#6b7280}.actions{margin-top:24px;text-align:center}.actions button{border:0;border-radius:10px;background:#1855a6;color:white;padding:13px 28px;font-weight:800;cursor:pointer}@media print{.actions{display:none}}
+  </style></head><body><main class="sheet"><div class="top"><div><div class="brand">HAJIN GROUP</div><small>헬스기구 영업 · 판매 · A/S</small></div><div style="text-align:right;font-size:12px"><b>발행일</b><br>${writtenAt}</div></div><h1 class="title">견 적 서</h1><table class="meta"><tr><th>받는 곳</th><td>${escapeHtml(first.company)}</td></tr>${first.recipient_email?`<tr><th>이메일</th><td>${escapeHtml(first.recipient_email)}</td></tr>`:""}</table><table class="items"><colgroup><col style="width:6%"><col style="width:22%"><col style="width:17%"><col style="width:8%"><col style="width:14%"><col style="width:15%"><col style="width:18%"></colgroup><thead><tr><th>No.</th><th>품목</th><th>모델명</th><th>수량</th><th>단가</th><th>금액</th><th>비고</th></tr></thead><tbody>${rows}</tbody></table><table class="totals"><tr><td>공급가액</td><td>${supply.toLocaleString()}원</td></tr><tr><td>부가세</td><td>${tax.toLocaleString()}원</td></tr><tr class="grand"><td>총 견적금액</td><td>${total.toLocaleString()}원</td></tr></table><p class="notice">위와 같이 견적합니다. 출력 화면에서 프린터 항목을 ‘PDF로 저장’으로 선택하면 PDF 파일로 저장할 수 있습니다.</p><div class="actions"><button onclick="window.print()">인쇄 · PDF 저장</button></div></main></body></html>`);
+  popup.document.close();
+  popup.focus();
+};
 function EstimateList(){
   const [documents,setDocuments]=useState<BusinessDocument[]>([]);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
+  const [query,setQuery]=useState("");
   useEffect(()=>{
     let active=true;
     supabase.from("business_documents")
@@ -1394,21 +1620,39 @@ function EstimateList(){
   const groups=useMemo(()=>{
     const grouped=new Map<string,BusinessDocument[]>();
     documents.forEach(document=>{
-      const key=`${document.company}-${document.created_at.slice(0,16)}`;
+      const key=`${document.company}-${document.created_at}`;
       grouped.set(key,[...(grouped.get(key)??[]),document]);
     });
     return Array.from(grouped.values());
   },[documents]);
+  const filteredGroups=useMemo(()=>{
+    const keyword=query.trim().toLowerCase();
+    if(!keyword) return groups;
+    return groups.filter(items=>items.some(item=>[
+      item.company,item.item_name,item.model_name,item.memo,item.created_at,
+    ].join(" ").toLowerCase().includes(keyword)));
+  },[groups,query]);
   if(loading) return <div className="mt-5 rounded-3xl bg-white p-8 text-center text-sm font-bold text-slate-500 shadow-sm">견적서를 불러오는 중입니다</div>;
   if(error) return <div className="mt-5 rounded-3xl bg-rose-50 p-6 text-center text-sm font-bold text-rose-700">{error}</div>;
   if(!groups.length) return <div className="mt-5"><Empty text="아직 작성된 견적서가 없습니다"/></div>;
   return <div className="mt-5 space-y-3">
-    <p className="text-sm font-bold text-slate-500">총 {groups.length}개의 견적서가 있습니다</p>
-    {groups.map((items,index)=>{
+    <label className="relative block">
+      <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={19}/>
+      <input value={query} onChange={event=>setQuery(event.target.value)} className="input !mt-0 pl-11" placeholder="거래처·품목·모델명 검색"/>
+    </label>
+    <p className="text-sm font-bold text-slate-500">총 {groups.length}개 중 {filteredGroups.length}개의 견적서가 조회됩니다</p>
+    {!filteredGroups.length&&<Empty text="검색 조건에 맞는 견적서가 없습니다"/>}
+    {filteredGroups.map((items,index)=>{
       const first=items[0];
       const supply=items.reduce((sum,item)=>sum+Number(item.quantity)*Number(item.unit_price),0);
       const total=supply+Math.round(supply*.1);
       const writtenAt=new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"long",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(new Date(first.created_at));
+      const exportData:OfficeExportData={
+        title:"견적서",company:first.company,date:writtenAt,
+        headers:["품목","모델명","수량","단가","금액","비고"],
+        rows:items.map(item=>[item.item_name,item.model_name||"-",item.quantity,Number(item.unit_price).toLocaleString(),(Number(item.quantity)*Number(item.unit_price)).toLocaleString(),item.memo||""]),
+        summary:[["공급가액",`${supply.toLocaleString()}원`],["부가세",`${Math.round(supply*.1).toLocaleString()}원`],["총 견적금액",`${total.toLocaleString()}원`]],
+      };
       return <details key={`${first.id}-${index}`} className="group overflow-hidden rounded-[22px] bg-white shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
           <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><FileText size={21}/></span>
@@ -1428,6 +1672,7 @@ function EstimateList(){
             <p className="mt-1 flex justify-between"><span>부가세</span><b>{Math.round(supply*.1).toLocaleString()}원</b></p>
             <p className="mt-2 flex justify-between border-t border-blue-200 pt-2 font-black text-blue-800"><span>총 견적금액</span><span>{total.toLocaleString()}원</span></p>
           </div>
+          <OfficeExportButtons data={exportData}/>
         </div>
       </details>;
     })}
@@ -1435,6 +1680,7 @@ function EstimateList(){
 }
 function DocumentForm({type,userId,say,openEstimateList}:{type:"estimate"|"transaction";userId:string;say:(s:string)=>void;openEstimateList?:()=>void}) {
   const [saved,setSaved]=useState(false);
+  const [lastExport,setLastExport]=useState<OfficeExportData|null>(null);
   const [issuer,setIssuer]=useState<"하진"|"렉스코">("하진");
   const [items,setItems]=useState([{item_name:"",model_name:"",quantity:"1",unit_price:"",memo:""}]);
   const label=type==="estimate"?"견적서":"거래명세서";
@@ -1459,9 +1705,17 @@ function DocumentForm({type,userId,say,openEstimateList}:{type:"estimate"|"trans
     })).filter(row=>row.item_name);
     const{error}=await supabase.from("business_documents").insert(rows);
     if(error){say(`${label}를 저장하지 못했습니다`);return}
+    const exportSupply=rows.reduce((sum,row)=>sum+Number(row.quantity)*Number(row.unit_price),0);
+    const exportTax=Math.round(exportSupply*.1);
+    setLastExport({
+      title:label,company,date:new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",year:"numeric",month:"long",day:"numeric"}).format(new Date()),
+      headers:["품목","모델명","수량","단가","금액","비고"],
+      rows:rows.map(row=>[row.item_name,row.model_name||"-",row.quantity,Number(row.unit_price).toLocaleString(),(Number(row.quantity)*Number(row.unit_price)).toLocaleString(),row.memo||""]),
+      summary:[["공급가액",`${exportSupply.toLocaleString()}원`],["부가세",`${exportTax.toLocaleString()}원`],["총 금액",`${(exportSupply+exportTax).toLocaleString()}원`]],
+    });
     setSaved(true);say(`${label}가 저장됐습니다`);
   };
-  if(type==="transaction") return <form action={save} className="mt-5 space-y-4"><Box t={`${label} 작성`}><Field n="company" l="거래처 *" p="예: 한강센트럴자이"/><Field n="email" l="받는 사람 이메일" p="example@company.com"/><Field n="item_name" l="품목 *" p="예: 런닝머신 벨트"/><Field n="model_name" l="모델명" p="예: DRAX DX-3000"/><Field n="quantity" l="수량" p="1"/><Field n="unit_price" l="단가" p="0"/><label className="block text-sm font-bold">비고<textarea name="memo" rows={3} className="input resize-none" placeholder="추가 내용을 입력하세요"/></label></Box><button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">{label} 저장</button>{saved&&<button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>}</form>;
+  if(type==="transaction") return <form action={save} className="mt-5 space-y-4"><Box t={`${label} 작성`}><Field n="company" l="거래처 *" p="예: 한강센트럴자이"/><Field n="email" l="받는 사람 이메일" p="example@company.com"/><Field n="item_name" l="품목 *" p="예: 런닝머신 벨트"/><Field n="model_name" l="모델명" p="예: DRAX DX-3000"/><Field n="quantity" l="수량" p="1"/><Field n="unit_price" l="단가" p="0"/><label className="block text-sm font-bold">비고<textarea name="memo" rows={3} className="input resize-none" placeholder="추가 내용을 입력하세요"/></label></Box><button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">{label} 저장</button>{saved&&lastExport&&<OfficeExportButtons data={lastExport}/>}</form>;
 
   const changeItem=(index:number,key:string,value:string)=>setItems(current=>current.map((item,i)=>i===index?{...item,[key]:value}:item));
   const supply=items.reduce((sum,item)=>sum+(Number(item.quantity)||0)*(Number(item.unit_price)||0),0);
@@ -1495,7 +1749,7 @@ function DocumentForm({type,userId,say,openEstimateList}:{type:"estimate"|"trans
       <textarea name="memo" rows={4} className="input resize-none" placeholder="비고"/>
     </Box>
     <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">견적서 저장</button>
-    {saved&&<><button type="button" onClick={()=>window.print()} className="w-full rounded-2xl border border-slate-300 bg-white py-4 font-black">인쇄·PDF 저장</button>{openEstimateList&&<button type="button" onClick={openEstimateList} className="w-full rounded-2xl bg-blue-50 py-4 font-black text-blue-700">작성한 견적서 보기</button>}</>}
+    {saved&&<>{lastExport&&<OfficeExportButtons data={lastExport}/>} {openEstimateList&&<button type="button" onClick={openEstimateList} className="w-full rounded-2xl bg-blue-50 py-4 font-black text-blue-700">작성한 견적서 보기</button>}</>}
   </form>;
 }
 function MailForm({say}:{say:(s:string)=>void}) {
