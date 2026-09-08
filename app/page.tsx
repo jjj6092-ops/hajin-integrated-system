@@ -678,15 +678,25 @@ export default function Page() {
             </p>
           )}
           {view === "home" && (
-            <Dashboard jobs={jobs} setView={navigate} open={open} />
+            <Dashboard
+              jobs={jobs}
+              setView={(nextView) => {
+                // 홈의 빠른 업무 카드는 브라우저 history를 건드리지 않고
+                // 앱 내부 화면만 전환한다. 일부 모바일 브라우저에서
+                // pushState 직후 페이지 로드 오류가 나는 문제를 피한다.
+                viewRef.current = nextView;
+                setView(nextView);
+              }}
+              open={open}
+            />
           )}{" "}
           {view === "calendar" && (
             <CalendarScreen jobs={jobs} open={open} close={() => navigate("home")} />
           )}{" "}
           {view === "register" && <Register add={add} />}{" "}
-          {view === "todayVisit" && <TodayJobs jobs={jobs} mode="visit" open={open} close={() => navigate("home")} />} {" "}
-          {view === "todayPending" && <TodayJobs jobs={jobs} mode="pending" open={open} close={() => navigate("home")} />} {" "}
-          {view === "todayComplete" && <TodayJobs jobs={jobs} mode="complete" open={open} close={() => navigate("home")} />} {" "}
+          {view === "todayVisit" && <TodayJobs jobs={jobs} mode="visit" open={open} close={() => { viewRef.current = "home"; setView("home"); }} />} {" "}
+          {view === "todayPending" && <TodayJobs jobs={jobs} mode="pending" open={open} close={() => { viewRef.current = "home"; setView("home"); }} />} {" "}
+          {view === "todayComplete" && <TodayJobs jobs={jobs} mode="complete" open={open} close={() => { viewRef.current = "home"; setView("home"); }} />} {" "}
           {view === "progress" && (
             <Progress
               jobs={filtered}
@@ -1456,7 +1466,7 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
             <ImageIcon size={24}/>
             <b className="mt-2 text-sm">갤러리 선택</b>
             <span className="mt-1 text-xs font-bold text-emerald-600">{intakeGalleryCount?`${intakeGalleryCount}장`:'여러 장 선택'}</span>
-            <input type="file" name="intake_photos" accept="image/*" multiple className="sr-only" onChange={(event)=>setIntakeGalleryCount(event.target.files?.length ?? 0)}/>
+            <input type="file" name="intake_photos" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple className="sr-only" onClick={(event)=>{event.currentTarget.value=""}} onChange={(event)=>setIntakeGalleryCount(event.target.files?.length ?? 0)}/>
           </label>
         </div>
         {intakePhotoCount>0&&<p className="text-xs font-bold text-slate-500">총 {intakePhotoCount}장 선택됨</p>}
@@ -1660,7 +1670,7 @@ function Detail({
                 </label>
                 <label className="cursor-pointer rounded-xl bg-white/80 px-2 py-2 text-[11px] font-black shadow-sm active:scale-[0.98]">
                   갤러리
-                  <input type="file" accept="image/*" multiple className="sr-only" onChange={(event)=>appendFiles(Array.from(event.target.files||[]))}/>
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple className="sr-only" onClick={(event)=>{event.currentTarget.value=""}} onChange={(event)=>appendFiles(Array.from(event.target.files||[]))}/>
                 </label>
               </div>
             </div>;
