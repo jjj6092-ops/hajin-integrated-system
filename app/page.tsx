@@ -545,7 +545,7 @@ export default function Page() {
             {view === "home" ? (
               <div className="relative size-11 shrink-0 bg-transparent">
                 <img
-                  src="/hajin-emblem-silver.jpg"
+                  src="/hajin-emblem-transparent.png"
                   alt="HAJIN"
                   className="h-full w-full object-contain"
                 />
@@ -553,7 +553,7 @@ export default function Page() {
             ) : (
               <div className="relative size-11 shrink-0 bg-transparent">
                 <img
-                  src="/hajin-emblem-silver.jpg"
+                  src="/hajin-emblem-transparent.png"
                   alt="HAJIN"
                   className="h-full w-full object-contain"
                 />
@@ -666,7 +666,7 @@ function AuthLoading() {
       <div className="text-center">
         <div className="mx-auto size-20 bg-transparent drop-shadow-lg">
           <img
-            src="/hajin-emblem-silver.jpg"
+            src="/hajin-emblem-transparent.png"
             alt="HAJIN"
             className="h-full w-full object-contain"
           />
@@ -759,7 +759,7 @@ function Login() {
       <div className="relative mx-auto max-w-md">
         <section className="pt-[7vh] text-center text-white">
           <div className="mx-auto size-44 bg-transparent drop-shadow-2xl">
-            <img src="/hajin-emblem-silver.jpg" alt="HAJIN" className="h-full w-full object-contain"/>
+            <img src="/hajin-emblem-transparent.png" alt="HAJIN" className="h-full w-full object-contain"/>
           </div>
           <h1 className="mt-6 text-3xl font-black tracking-tight">하진그룹</h1>
           <p className="mt-2 text-sm font-bold text-blue-100/90">
@@ -802,8 +802,8 @@ function Login() {
               </button>
             </div>
           </label>
-          <div className="grid grid-cols-2 items-center gap-3">
-            <label className="order-1 flex cursor-pointer items-center justify-start gap-2 text-sm font-black text-slate-700">
+          <div className="flex flex-wrap items-center justify-start gap-x-4 gap-y-2">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-black text-slate-700">
               <input
                 type="checkbox"
                 checked={saveId}
@@ -812,7 +812,7 @@ function Login() {
               />
               아이디 저장
             </label>
-            <label className="order-2 flex cursor-pointer items-center justify-end gap-2 text-sm font-black text-slate-700">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-black text-slate-700">
               <input
                 type="checkbox"
                 checked={autoLogin}
