@@ -56,6 +56,7 @@ type Job = {
   id: string;
   company: string;
   site: string;
+  manager: string;
   phone: string;
   machine: string;
   issue: string;
@@ -182,17 +183,35 @@ const badge: Record<Status, string> = {
   재방문: "bg-violet-50 text-violet-700",
   처리완료: "bg-emerald-50 text-emerald-700",
 };
+const CONTACT_SEPARATOR = "|||";
+const splitContact = (value: string) => {
+  const raw = String(value || "");
+  if (!raw.includes(CONTACT_SEPARATOR)) return { manager: "", phone: raw };
+  const [manager, ...rest] = raw.split(CONTACT_SEPARATOR);
+  return { manager: manager.trim(), phone: rest.join(CONTACT_SEPARATOR).trim() };
+};
+const joinContact = (manager: string, phone: string) =>
+  manager.trim() ? `${manager.trim()}${CONTACT_SEPARATOR}${phone.trim()}` : phone.trim();
+const companyAccent = (company: string) => {
+  if (company === "하진") return { bar: "bg-blue-500", tag: "bg-blue-50 text-blue-700" };
+  if (company === "렉스코") return { bar: "bg-emerald-500", tag: "bg-emerald-50 text-emerald-700" };
+  if (company === "디랙스") return { bar: "bg-orange-500", tag: "bg-orange-50 text-orange-700" };
+  return { bar: "bg-slate-400", tag: "bg-slate-100 text-slate-700" };
+};
+
 const toJob = (r: JobRow): Job => {
   const d = new Date(r.created_at);
   const y = String(d.getFullYear()).slice(-2),
     m = String(d.getMonth() + 1).padStart(2, "0"),
     day = String(d.getDate()).padStart(2, "0");
+  const contact = splitContact(r.contact_phone);
   return {
     dbId: r.id,
     id: `AS-${y}${m}${day}-${String(r.id).padStart(3, "0")}`,
     company: r.company,
     site: r.site,
-    phone: r.contact_phone,
+    manager: contact.manager,
+    phone: contact.phone,
     machine: r.machine,
     issue: r.issue,
     date: r.visit_note,
@@ -530,7 +549,10 @@ export default function Page() {
       company,
       issue,
       site: String(f.get("site") || "").trim(),
-      contact_phone: String(f.get("phone") || "").trim(),
+      contact_phone: joinContact(
+        String(f.get("manager") || "").trim(),
+        String(f.get("phone") || "").trim(),
+      ),
       machine: String(f.get("machine") || "").trim(),
       visit_note: [
         String(f.get("date") || "").trim(),
@@ -1090,7 +1112,7 @@ function Dashboard({
       </section>
       <section className="mt-4 rounded-[24px] bg-white p-3 shadow-sm">
         <div className="mb-3 px-1 text-center">
-          <p className="text-xl font-black text-slate-900">{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Seoul" }).format(new Date())} · 오늘의 일정</p>
+          <p className="text-xl font-black text-slate-900">{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Seoul" }).format(new Date())} 오늘의 일정</p>
         </div>
         <div className="grid grid-cols-4 gap-2">
           {workflowCards.map(([label, n, Icon, style]) => (
@@ -1454,7 +1476,10 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
         </label>
         {companyChoice==="기타"&&<label className="block text-sm font-bold">기타 고객사 *<input value={otherCompany} onChange={(e)=>setOtherCompany(e.target.value)} placeholder="고객사명을 입력하세요" className="input"/></label>}
         <Field n="site" l="현장 위치" p="예: 한강센트럴자이 커뮤니티센터 2층" />
-        <Field n="phone" l="연락처" p="010-0000-0000" />
+        <div className="grid grid-cols-2 gap-3">
+          <Field n="manager" l="담당자 이름" p="예: 홍길동" />
+          <Field n="phone" l="담당자 연락처" p="010-0000-0000" />
+        </div>
       </Box>
       <Box t="장비 및 증상">
         <Field n="machine" l="장비명 / 모델" p="예: DRAX 런닝머신" />
@@ -1535,10 +1560,21 @@ function WorkflowStageJobs({ jobs, step, open, close }: { jobs: Job[]; step: Wor
     <div className="space-y-3">
       {visible.length===0 ? <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-400">해당 단계의 업무가 없습니다.</div> : visible.map(job => {
         const schedule=scheduleOf(String(job.date||""));
-        return <button key={String(job.dbId||job.id)} type="button" onClick={()=>open(job)} className="w-full rounded-2xl bg-white p-4 text-left shadow-sm active:scale-[0.99]">
-          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block truncate text-base">{job.company}</b><span className="mt-1 block truncate text-xs text-slate-500">{[schedule.dateKey,displayTime(schedule.time),job.site].filter(Boolean).join(" · ")}</span></div><span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step}</span></div>
-          <p className="mt-3 truncate text-sm font-bold text-slate-700">{job.issue || "접수 내용 없음"}</p>
-          <p className="mt-1 truncate text-xs text-slate-500">{[job.machine,job.worker].filter(Boolean).join(" · ")}</p>
+        const accent=companyAccent(job.company);
+        return <button key={String(job.dbId||job.id)} type="button" onClick={()=>open(job)} className="relative w-full overflow-hidden rounded-2xl bg-white p-4 pl-5 text-left shadow-sm active:scale-[0.99]">
+          <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`}></span>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
+              <b className="mt-2 block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
+            </div>
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step}</span>
+          </div>
+          <div className="mt-3 space-y-1.5 text-sm">
+            <p><span className="font-black text-slate-500">출동장소</span> · <b>{job.site || "미입력"}</b></p>
+            <p><span className="font-black text-slate-500">고장원인</span> · <b>{job.issue || "미입력"}</b></p>
+            <p><span className="font-black text-slate-500">담당자</span> · <b>{job.manager || "미입력"}</b>{job.phone ? ` · ${job.phone}` : ""}</p>
+          </div>
         </button>;
       })}
     </div>
@@ -1736,7 +1772,8 @@ function Detail({
         <p className="text-sm text-blue-100">{job.site || "현장 미정"}</p>
         <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-blue-50">
           <span>방문 · {job.date || "일정 미정"}</span><span>기사 · {job.worker || "미배정"}</span>
-          <span>장비 · {job.machine || "미정"}</span><span>증상 · {job.issue || "미입력"}</span>
+          <span>담당자 · {job.manager || "미입력"}</span><span>연락처 · {job.phone || "미입력"}</span>
+          <span className="col-span-2">고장원인 · {job.issue || "미입력"}</span>
         </div>
       </section>
 
