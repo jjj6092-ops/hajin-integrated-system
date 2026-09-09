@@ -5,6 +5,7 @@ import {
   Bell,
   CalendarDays,
   Camera,
+  ChevronLeft,
   ChevronRight,
   ClipboardPenLine,
   CircleDollarSign,
@@ -136,6 +137,18 @@ const readWorkflow = (jobId:number): JobWorkflow => {
 const writeWorkflow = (jobId:number,value:JobWorkflow) => {
   if (typeof window === "undefined") return;
   try { const all=JSON.parse(localStorage.getItem(WORKFLOW_KEY)||"{}"); all[String(jobId)]=value; localStorage.setItem(WORKFLOW_KEY,JSON.stringify(all)); } catch {}
+};
+const workflowStepOfJob = (job: Job): WorkflowStep => {
+  if (typeof window !== "undefined") {
+    try {
+      const all = JSON.parse(localStorage.getItem(WORKFLOW_KEY) || "{}");
+      const saved = all[String(job.dbId)];
+      if (saved?.step) return normalizeWorkflowStep(saved.step);
+    } catch {}
+  }
+  if (job.status === "처리완료") return "작업완료";
+  if (job.status === "방문예정" || job.status === "부품대기" || job.status === "재방문") return "출동";
+  return "접수";
 };
 
 type View =
@@ -1038,35 +1051,14 @@ function Dashboard({
   setView: (v: View) => void;
   open: (j: Job) => void;
 }) {
-  const todayKey = koreaDateKey();
   const [openOffice,setOpenOffice]=useState<string | null>(null);
-  const [todayMode,setTodayMode]=useState<"visit" | "pending" | "complete" | null>(null);
-  const nums = [
-    [
-      "접수등록완료",
-      jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey).length,
-      CalendarDays,
-      "bg-blue-50 text-blue-700",
-      "visit" as const,
-    ],
-    [
-      "미처리",
-      jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status !== "처리완료").length,
-      ToolCase,
-      "bg-rose-50 text-rose-700",
-      "pending" as const,
-    ],
-    [
-      "작업완료",
-      jobs.filter((j) => scheduleOf(j.date).dateKey === todayKey && j.status === "처리완료").length,
-      History,
-      "bg-emerald-50 text-emerald-700",
-      "complete" as const,
-    ],
+  const [workflowMode,setWorkflowMode]=useState<WorkflowStep | null>(null);
+  const workflowCards = [
+    ["접수", jobs.filter((j) => workflowStepOfJob(j) === "접수").length, ClipboardPenLine, "bg-blue-50 text-blue-700"],
+    ["출동", jobs.filter((j) => workflowStepOfJob(j) === "출동").length, ToolCase, "bg-amber-50 text-amber-700"],
+    ["작업완료", jobs.filter((j) => workflowStepOfJob(j) === "작업완료").length, Wrench, "bg-emerald-50 text-emerald-700"],
+    ["정산완료", jobs.filter((j) => workflowStepOfJob(j) === "정산완료").length, CircleDollarSign, "bg-violet-50 text-violet-700"],
   ] as const;
-  const [todayYear, todayMonth, todayDay] = todayKey.split("-").map(Number);
-  const todayWeekday = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"][new Date(todayYear, todayMonth - 1, todayDay).getDay()];
-  const todayLabel = `${todayYear}년 ${todayMonth}월 ${todayDay}일 ${todayWeekday}`;
   const officeFolders: Array<{
     key:string;
     label:string;
@@ -1084,15 +1076,8 @@ function Dashboard({
     { key:"inventory", label:"재고관리", icon:Warehouse, color:"bg-emerald-50 text-emerald-700", iconColor:"bg-emerald-600 text-white", children:[{label:"재고 수량 확보 및 발주"},{label:"렉스코"},{label:"디랙스"}] },
     { key:"sales", label:"매출매입관리", icon:CircleDollarSign, color:"bg-indigo-50 text-indigo-700", iconColor:"bg-indigo-600 text-white", children:[{label:"매출 관리"},{label:"매입 관리"},{label:"입금·미수 확인"}] },
   ];
-  if (todayMode) {
-    return (
-      <TodayJobs
-        jobs={jobs}
-        mode={todayMode}
-        open={open}
-        close={() => setTodayMode(null)}
-      />
-    );
+  if (workflowMode) {
+    return <WorkflowStageJobs jobs={jobs} step={workflowMode} open={open} close={() => setWorkflowMode(null)} />;
   }
   return (
     <>
@@ -1104,27 +1089,16 @@ function Dashboard({
         />
       </section>
       <section className="mt-4 rounded-[24px] bg-white p-3 shadow-sm">
-        <div className="mb-3 px-1">
-          <p className="text-xl sm:text-2xl font-black text-slate-900 text-center w-full">{todayLabel}</p>
+        <div className="mb-3 px-1 text-center">
+          <p className="text-xl font-black text-slate-900">A/S 업무 진행 현황</p>
+          <p className="mt-1 text-xs font-bold text-slate-400">접수 → 출동 → 작업완료 → 정산완료</p>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          {nums.map(([label, n, Icon, style, targetMode]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => setTodayMode(targetMode)}
-              className="relative z-10 touch-manipulation rounded-2xl bg-slate-50 p-3 text-left ring-1 ring-slate-100 active:scale-[0.98]"
-            >
-              <div
-                className={`grid size-9 place-items-center rounded-xl ${style}`}
-              >
-                <Icon size={18} />
-              </div>
-              <p className="mt-3 text-2xl font-black">
-                {n}
-                <span className="text-sm">건</span>
-              </p>
-              <p className="text-xs font-bold text-slate-600">{label}</p>
+        <div className="grid grid-cols-4 gap-2">
+          {workflowCards.map(([label, n, Icon, style]) => (
+            <button key={label} type="button" onClick={() => setWorkflowMode(label)} className="touch-manipulation rounded-2xl bg-slate-50 px-2 py-3 text-center ring-1 ring-slate-100 active:scale-[0.98]">
+              <div className={`mx-auto grid size-9 place-items-center rounded-xl ${style}`}><Icon size={18} /></div>
+              <p className="mt-2 text-xl font-black">{n}<span className="text-xs">건</span></p>
+              <p className="mt-0.5 whitespace-nowrap text-[11px] font-black text-slate-600">{label}</p>
             </button>
           ))}
         </div>
@@ -1546,6 +1520,32 @@ function Field({ n, l, p }: { n: string; l: string; p: string }) {
     </label>
   );
 }
+function WorkflowStageJobs({ jobs, step, open, close }: { jobs: Job[]; step: WorkflowStep; open: (j: Job) => void; close: () => void; }) {
+  const visible = jobs.filter((job) => workflowStepOfJob(job) === step).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const descriptions: Record<WorkflowStep,string> = {
+    "접수":"접수 후 일정·견적을 확인할 업무",
+    "출동":"일정이 잡혀 준비·출동·현장 작업 중인 업무",
+    "작업완료":"수리는 끝났고 입금·거래명세서 정리가 남은 업무",
+    "정산완료":"입금 확인과 거래명세서 발송까지 끝난 업무",
+  };
+  return <div className="mt-5">
+    <div className="mb-4 flex items-center gap-3">
+      <button type="button" onClick={close} className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white shadow-sm"><ChevronLeft size={20}/></button>
+      <div><h2 className="text-xl font-black">{step}</h2><p className="mt-0.5 text-xs text-slate-500">{descriptions[step]} · 총 {visible.length}건</p></div>
+    </div>
+    <div className="space-y-3">
+      {visible.length===0 ? <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-400">해당 단계의 업무가 없습니다.</div> : visible.map(job => {
+        const schedule=scheduleOf(String(job.date||""));
+        return <button key={String(job.dbId||job.id)} type="button" onClick={()=>open(job)} className="w-full rounded-2xl bg-white p-4 text-left shadow-sm active:scale-[0.99]">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><b className="block truncate text-base">{job.company}</b><span className="mt-1 block truncate text-xs text-slate-500">{[schedule.dateKey,displayTime(schedule.time),job.site].filter(Boolean).join(" · ")}</span></div><span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step}</span></div>
+          <p className="mt-3 truncate text-sm font-bold text-slate-700">{job.issue || "접수 내용 없음"}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{[job.machine,job.worker].filter(Boolean).join(" · ")}</p>
+        </button>;
+      })}
+    </div>
+  </div>;
+}
+
 function TodayJobs({
   jobs,
   mode,
