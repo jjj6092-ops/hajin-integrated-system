@@ -1090,7 +1090,7 @@ function Dashboard({
       </section>
       <section className="mt-4 rounded-[24px] bg-white p-3 shadow-sm">
         <div className="mb-3 px-1 text-center">
-          <p className="text-xl font-black text-slate-900">{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Seoul" }).format(new Date())}</p>
+          <p className="text-xl font-black text-slate-900">{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Seoul" }).format(new Date())} · 오늘의 일정</p>
         </div>
         <div className="grid grid-cols-4 gap-2">
           {workflowCards.map(([label, n, Icon, style]) => (
@@ -1699,156 +1699,84 @@ function Detail({
   openTransaction: () => void;
 }) {
   const [value, setValue] = useState(job.resolution);
-  const initialSchedule=scheduleOf(job.date);
-  const [site,setSite]=useState(job.site);
-  const [visitDate,setVisitDate]=useState(initialSchedule.dateKey);
-  const [visitTime,setVisitTime]=useState(/^\d{1,2}:\d{2}$/.test(initialSchedule.time)?initialSchedule.time:"");
-  const photoCategories=["수리 전","고장 부위","작업 중","수리 후"] as const;
   const [photos,setPhotos]=useState<Record<string,File[]>>({});
   const [workflow,setWorkflow]=useState<JobWorkflow>(()=>readWorkflow(job.dbId));
+  const [finishing,setFinishing]=useState(false);
   const saveWorkflow=(patch:Partial<JobWorkflow>)=>{
     const next={...workflow,...patch};
-    if(next.step==="최종완료" && !(next.paymentStatus==="입금완료" && next.transactionSent)) return;
     setWorkflow(next); writeWorkflow(job.dbId,next);
   };
   useEffect(() => {
-    const schedule=scheduleOf(job.date);
     setValue(job.resolution);
-    setSite(job.site);
-    setVisitDate(schedule.dateKey);
-    setVisitTime(/^\d{1,2}:\d{2}$/.test(schedule.time)?schedule.time:"");
     setPhotos({});
     setWorkflow(readWorkflow(job.dbId));
-  }, [job.dbId, job.resolution, job.site, job.date]);
+  }, [job.dbId, job.resolution]);
+
+  const appendFiles=(category:string,files:File[])=>setPhotos(current=>({...current,[category]:[...(current[category]||[]),...files]}));
+  const finishWork=async()=>{
+    if(finishing) return;
+    setFinishing(true);
+    try{
+      await save(value);
+      for(const category of ["작업 전","작업 후"]){
+        const files=photos[category]||[];
+        if(files.length) await uploadPhotos(category,files);
+      }
+      await update("처리완료");
+      saveWorkflow({step:"작업완료"});
+      setPhotos({});
+    } finally { setFinishing(false); }
+  };
+
   return (
     <div className="mt-5 space-y-4">
       <section className="rounded-3xl bg-[#1855a6] p-5 text-white">
-        <div className="flex justify-between text-xs">
-          <span>{job.id}</span>
-          <b>{job.status}</b>
-        </div>
+        <div className="flex justify-between text-xs"><span>{job.id}</span><b>{job.status}</b></div>
         <h2 className="mt-3 text-xl font-black">{job.company}</h2>
         <p className="text-sm text-blue-100">{job.site || "현장 미정"}</p>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-blue-50">
+          <span>방문 · {job.date || "일정 미정"}</span><span>기사 · {job.worker || "미배정"}</span>
+          <span>장비 · {job.machine || "미정"}</span><span>증상 · {job.issue || "미입력"}</span>
+        </div>
       </section>
-      <Box t="A/S 진행 단계">
-        <div className="grid grid-cols-4 gap-2">
-          {workflowSteps.map((step,index)=>{
-            const current=workflowSteps.indexOf(workflow.step);
-            const done=index<current;
-            const active=index===current;
-            const locked=step==="정산완료" && !(job.status==="처리완료" && workflow.paymentStatus==="입금완료" && workflow.transactionSent);
-            return <button key={step} type="button" disabled={locked} onClick={()=>saveWorkflow({step})} className={`rounded-xl px-2 py-3 text-[11px] font-black leading-tight ${done?"bg-emerald-100 text-emerald-700":active?"bg-blue-600 text-white":"bg-slate-100 text-slate-500"} disabled:opacity-40`}>
-              {done?"✓ ":""}{step}
-            </button>;
-          })}
-        </div>
-        <p className="text-center text-xs font-bold text-slate-500">현재 단계 · <span className="text-blue-700">{workflow.step}</span></p>
-      </Box>
 
-      <Box t="견적서 작성">
-        <p className="text-xs leading-5 text-slate-500">견적서는 접수 직후 또는 작업 완료 후 언제든 작성할 수 있습니다.</p>
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={openEstimate} className="rounded-xl bg-blue-600 py-3 text-sm font-black text-white">견적서 작성</button>
-          <button type="button" onClick={()=>saveWorkflow({estimateSent:!workflow.estimateSent})} className={`rounded-xl border py-3 text-sm font-black ${workflow.estimateSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.estimateSent?"✓ 견적 발송완료":"견적 발송 체크"}</button>
-        </div>
-      </Box>
-
-      <Box t="출동 준비">
-        <textarea value={workflow.preparation} onChange={e=>setWorkflow({...workflow,preparation:e.target.value})} rows={3} placeholder="필요 장비 · 부품 · 공구를 입력하세요" className="input resize-none"/>
-        <button type="button" onClick={()=>saveWorkflow({preparation:workflow.preparation,step:"출동"})} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white">준비 내용 저장 · 출동 단계로</button>
-      </Box>
-
-      <Box t="정산">
-        <div className="grid grid-cols-3 gap-2">
-          {(["미입금","일부입금","입금완료"] as const).map(x=><button key={x} type="button" onClick={()=>saveWorkflow({paymentStatus:x})} className={`rounded-xl border py-2.5 text-xs font-black ${workflow.paymentStatus===x?"border-blue-600 bg-blue-50 text-blue-700":"border-slate-200"}`}>{x}</button>)}
-        </div>
-        <input value={workflow.paymentAmount} onChange={e=>setWorkflow({...workflow,paymentAmount:e.target.value})} onBlur={()=>saveWorkflow({paymentAmount:workflow.paymentAmount})} inputMode="numeric" placeholder="입금 금액 (선택)" className="input"/>
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={openTransaction} disabled={workflow.paymentStatus!=="입금완료"} className="rounded-xl bg-violet-600 py-3 text-sm font-black text-white disabled:bg-slate-300">거래명세서 작성</button>
-          <button type="button" onClick={()=>saveWorkflow({transactionSent:!workflow.transactionSent})} disabled={workflow.paymentStatus!=="입금완료"} className={`rounded-xl border py-3 text-sm font-black disabled:opacity-40 ${workflow.transactionSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.transactionSent?"✓ 명세서 발송완료":"명세서 발송 체크"}</button>
-        </div>
-        <button type="button" disabled={!(job.status==="처리완료"&&workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} onClick={()=>saveWorkflow({step:"정산완료"})} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-black text-white disabled:bg-slate-300">정산완료 · 1건 최종 완료</button>
-        <p className="text-[11px] leading-5 text-slate-500">작업완료 + 입금완료 + 거래명세서 발송이 확인되면 최종 완료할 수 있습니다.</p>
-      </Box>
-      <Box t="접수 내용">
-        <Info I={Wrench} l="장비" v={job.machine || "장비 미정"} />
-        <Info I={ToolCase} l="증상" v={job.issue} />
-        <Info I={CalendarDays} l="방문 예정" v={job.date || "일정 미정"} />
-        <Info I={UserRound} l="담당 기사" v={job.worker || "미배정"} />
-      </Box>
-      <Box t="방문 일정 수정">
-        <label className="block text-sm font-bold">현장 위치<input value={site} onChange={(event)=>setSite(event.target.value)} className="input" placeholder="현장 위치를 입력하세요"/></label>
+      <Box t="현장 작업 처리">
+        <p className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800">현장직은 이 화면에서 작업내용과 사진만 남기고 마지막에 작업완료를 한 번 누르면 됩니다.</p>
+        <textarea value={value} onChange={(e)=>setValue(e.target.value)} rows={4} placeholder="고장 원인 · 조치 내용 · 교체 부품을 간단히 입력하세요" className="input resize-none" />
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-bold">방문 날짜<input type="date" value={visitDate} onChange={(event)=>setVisitDate(event.target.value)} className="input"/></label>
-          <label className="block text-sm font-bold">방문 시간<select value={visitTime} onChange={(event)=>setVisitTime(event.target.value)} className="input appearance-none">
-            <option value="">시간 미정</option>
-            {Array.from({length:13},(_,index)=>index+8).map(hour=><option key={hour} value={`${String(hour).padStart(2,"0")}:00`}>{hour}시</option>)}
-          </select></label>
-        </div>
-        <button type="button" onClick={()=>void saveSchedule(site,visitDate,visitTime)} className="w-full rounded-xl bg-blue-600 py-3 text-sm font-black text-white">수정 내용 저장</button>
-      </Box>
-      <Box t="사진 첨부">
-        <p className="text-sm text-slate-500">항목별로 사진을 여러 장 선택할 수 있습니다.</p>
-        <div className="grid grid-cols-2 gap-3">
-          {photoCategories.map((category,index)=>{
+          {["작업 전","작업 후"].map((category,index)=>{
             const selected=photos[category]||[];
-            const styles=["border-blue-200 bg-blue-50 text-blue-700","border-rose-200 bg-rose-50 text-rose-700","border-amber-200 bg-amber-50 text-amber-700","border-emerald-200 bg-emerald-50 text-emerald-700"];
-            const appendFiles=(files:File[])=>setPhotos(current=>({...current,[category]:[...(current[category]||[]),...files]}));
-            return <div key={category} className={`rounded-2xl border-2 border-dashed p-3 text-center ${styles[index]}`}>
-              <Camera size={25} className="mx-auto"/>
-              <b className="mt-2 block text-sm">{category}</b>
-              <span className="mt-1 block text-xs font-bold">{selected.length?`${selected.length}장 선택됨`:"사진을 추가하세요"}</span>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <label className="cursor-pointer rounded-xl bg-white/80 px-2 py-2 text-[11px] font-black shadow-sm active:scale-[0.98]">
-                  카메라
-                  <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(event)=>appendFiles(Array.from(event.target.files||[]))}/>
-                </label>
-                <label className="cursor-pointer rounded-xl bg-white/80 px-2 py-2 text-[11px] font-black shadow-sm active:scale-[0.98]">
-                  갤러리
-                  <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple className="sr-only" onClick={(event)=>{event.currentTarget.value=""}} onChange={(event)=>appendFiles(Array.from(event.target.files||[]))}/>
-                </label>
+            return <div key={category} className={`rounded-2xl border-2 border-dashed p-3 text-center ${index===0?"border-blue-200 bg-blue-50 text-blue-700":"border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+              <Camera size={24} className="mx-auto"/><b className="mt-2 block text-sm">{category}</b>
+              <span className="mt-1 block text-[11px] font-bold">{selected.length?`${selected.length}장 선택됨`:"선택사항"}</span>
+              <div className="mt-2 grid grid-cols-2 gap-1.5">
+                <label className="cursor-pointer rounded-lg bg-white px-2 py-2 text-[11px] font-black shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e)=>appendFiles(category,Array.from(e.target.files||[]))}/></label>
+                <label className="cursor-pointer rounded-lg bg-white px-2 py-2 text-[11px] font-black shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onClick={(e)=>{e.currentTarget.value=""}} onChange={(e)=>appendFiles(category,Array.from(e.target.files||[]))}/></label>
               </div>
             </div>;
           })}
         </div>
-        {Object.entries(photos).some(([,files])=>files.length>0)&&<div className="rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600">
-          {photoCategories.filter(category=>photos[category]?.length).map(category=><p key={category} className="py-0.5"><span className="text-blue-700">{category}</span> · {photos[category].length}장</p>)}
-        </div>}
-        <button type="button" disabled={!Object.values(photos).some(files=>files.length)} onClick={async()=>{
-          for(const category of photoCategories){const files=photos[category]||[];if(files.length) await uploadPhotos(category,files);}
-          setPhotos({});
-        }} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:bg-slate-300">항목별 작업사진 첨부</button>
+        <button type="button" disabled={finishing} onClick={()=>void finishWork()} className="w-full rounded-2xl bg-emerald-600 py-4 text-base font-black text-white shadow-sm disabled:bg-slate-300">{finishing?"저장 중...":"작업완료"}</button>
+        <button type="button" onClick={()=>{void save(value); void update("재방문"); saveWorkflow({step:"출동"});}} className="w-full rounded-xl border border-slate-200 py-3 text-sm font-black text-slate-600">재방문 필요</button>
       </Box>
-      <Box t="진행 상태 변경">
-        <div className="grid grid-cols-2 gap-2">
-          {(["방문예정", "부품대기", "재방문", "처리완료"] as Status[]).map(
-            (s) => (
-              <button
-                key={s}
-                onClick={() => { void update(s); if (s === "처리완료") saveWorkflow({step:"작업완료"}); else if (s === "방문예정" || s === "부품대기" || s === "재방문") saveWorkflow({step:"출동"}); }}
-                className={`rounded-xl border py-3 text-sm font-bold ${job.status === s ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-200"}`}
-              >
-                {s}
-              </button>
-            ),
-          )}
+
+      <details className="rounded-3xl bg-white p-4 shadow-sm">
+        <summary className="cursor-pointer list-none text-sm font-black text-slate-700">사무직 지원 · 견적 / 입금 / 거래명세서 <span className="float-right text-slate-400">열기</span></summary>
+        <div className="mt-4 space-y-4 border-t border-slate-100 pt-4">
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={openEstimate} className="rounded-xl bg-blue-600 py-3 text-sm font-black text-white">견적서 작성</button>
+            <button type="button" onClick={()=>saveWorkflow({estimateSent:!workflow.estimateSent})} className={`rounded-xl border py-3 text-sm font-black ${workflow.estimateSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.estimateSent?"✓ 견적 발송완료":"견적 발송 체크"}</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {(["미입금","일부입금","입금완료"] as const).map(x=><button key={x} type="button" onClick={()=>saveWorkflow({paymentStatus:x})} className={`rounded-xl border py-2.5 text-xs font-black ${workflow.paymentStatus===x?"border-blue-600 bg-blue-50 text-blue-700":"border-slate-200"}`}>{x}</button>)}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={openTransaction} disabled={workflow.paymentStatus!=="입금완료"} className="rounded-xl bg-violet-600 py-3 text-sm font-black text-white disabled:bg-slate-300">거래명세서 작성</button>
+            <button type="button" onClick={()=>saveWorkflow({transactionSent:!workflow.transactionSent})} disabled={workflow.paymentStatus!=="입금완료"} className={`rounded-xl border py-3 text-sm font-black disabled:opacity-40 ${workflow.transactionSent?"border-emerald-300 bg-emerald-50 text-emerald-700":"border-slate-200"}`}>{workflow.transactionSent?"✓ 발송완료":"발송 체크"}</button>
+          </div>
+          <button type="button" disabled={!(job.status==="처리완료"&&workflow.paymentStatus==="입금완료"&&workflow.transactionSent)} onClick={()=>saveWorkflow({step:"정산완료"})} className="w-full rounded-xl bg-slate-900 py-3 text-sm font-black text-white disabled:bg-slate-300">정산완료 · 최종 마감</button>
         </div>
-      </Box>
-      <Box t="처리 내역">
-        <textarea
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          rows={5}
-          placeholder="고장 원인, 조치 내용, 교체 부품을 입력하세요"
-          className="input resize-none"
-        />
-        <button
-          onClick={() => void save(value)}
-          className="w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white"
-        >
-          처리 내역 저장
-        </button>
-      </Box>
+      </details>
     </div>
   );
 }
