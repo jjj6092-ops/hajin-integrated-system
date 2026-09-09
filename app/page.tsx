@@ -1090,8 +1090,7 @@ function Dashboard({
       </section>
       <section className="mt-4 rounded-[24px] bg-white p-3 shadow-sm">
         <div className="mb-3 px-1 text-center">
-          <p className="text-xl font-black text-slate-900">A/S 업무 진행 현황</p>
-          <p className="mt-1 text-xs font-bold text-slate-400">접수 → 출동 → 작업완료 → 정산완료</p>
+          <p className="text-xl font-black text-slate-900">{new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long", timeZone: "Asia/Seoul" }).format(new Date())}</p>
         </div>
         <div className="grid grid-cols-4 gap-2">
           {workflowCards.map(([label, n, Icon, style]) => (
