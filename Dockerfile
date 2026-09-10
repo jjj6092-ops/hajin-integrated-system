@@ -1,13 +1,15 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 COPY . .
 RUN npm run build
 RUN test -f /app/dist/client/index.html
 
 FROM node:22-bookworm-slim
 WORKDIR /app
+COPY package.json ./package.json
+RUN npm install --omit=dev
 COPY --from=build /app/dist/client ./dist/client
 COPY --from=build /app/server.mjs ./server.mjs
 RUN test -f /app/dist/client/index.html
