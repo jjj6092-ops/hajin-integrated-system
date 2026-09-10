@@ -742,25 +742,33 @@ export default function Page() {
     return true;
   };
 
-  const uploadJobPhotos = async (category: string, files: File[]) => {
-    if (!user || !selected || !files.length) return true;
+  const uploadJobPhotos = async (category: string, files: File[], jobId?: number) => {
+    const targetJobId = jobId ?? selected?.dbId;
+    if (!user || !targetJobId || !files.length) return true;
     const uploadedPaths: string[] = [];
     for (const [index,file] of files.entries()) {
-      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
-      const path=`${selected.dbId}/${category}/${Date.now()}-${index}-${safeName}`;
-      const { error }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false});
+      const safeName=(file.name || `photo-${index}.jpg`).replace(/[^a-zA-Z0-9._-]/g,"_");
+      const path=`${targetJobId}/${category}/${Date.now()}-${index}-${safeName}`;
+      const { error }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false,contentType:file.type || undefined});
       if(error){
-        if(uploadedPaths.length) await supabase.storage.from("as-job-photos").remove(uploadedPaths);
-        say("사진을 서버에 저장하지 못했습니다. 다시 시도해주세요");
+        say(`사진 저장 실패: ${error.message}`);
         return false;
       }
       uploadedPaths.push(path);
-      const {data:verifySigned,error:verifyError}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60);
-      if(verifyError || !verifySigned?.signedUrl){
-        await supabase.storage.from("as-job-photos").remove(uploadedPaths);
-        say(`사진 조회 권한 확인에 실패했습니다: ${verifyError?.message||"SELECT 정책을 확인해주세요"}`);
-        return false;
-      }
+    }
+    // 업로드가 끝난 뒤 서버 목록에서 실제 저장 여부를 한 번 더 확인한다.
+    const folder=`${targetJobId}/${category}`;
+    const {data:listData,error:listError}=await supabase.storage.from("as-job-photos").list(folder,{limit:100,sortBy:{column:"created_at",order:"desc"}});
+    if(listError){
+      // 조회 정책 문제여도 이미 업로드된 사진은 지우지 않는다.
+      say(`사진은 저장됐지만 조회 확인에 실패했습니다: ${listError.message}`);
+      return true;
+    }
+    const uploadedNames=new Set(uploadedPaths.map(path=>path.split("/").pop()));
+    const savedCount=(listData||[]).filter(item=>uploadedNames.has(item.name)).length;
+    if(savedCount < uploadedPaths.length){
+      say(`사진 ${uploadedPaths.length}장 중 ${savedCount}장만 저장 확인됐습니다`);
+      return savedCount > 0;
     }
     return true;
   };
@@ -1992,7 +2000,7 @@ function Detail({
   saveSchedule: (site:string,date:string,time:string) => Promise<void>;
   saveJob: (values:{company:string;site:string;manager:string;phone:string;machine:string;issue:string;date:string;time:string;worker:string;requiredEquipment:string;specialNotes:string;}) => Promise<Job | null>;
   deleteJob: () => Promise<boolean>;
-  uploadPhotos: (category:string,files:File[]) => Promise<boolean>;
+  uploadPhotos: (category:string,files:File[],jobId?:number) => Promise<boolean>;
   openEstimate: () => void;
   openTransaction: () => void;
 }) {
@@ -2103,7 +2111,7 @@ function Detail({
       if(!next) return null;
       if(intakePhotos.length){
         const newPhotoCount=intakePhotos.length;
-        const photoSaved=await uploadPhotos("접수사진",intakePhotos);
+        const photoSaved=await uploadPhotos("접수사진",intakePhotos,next.dbId);
         if(photoSaved===false) return null;
         setIntakePhotos([]);
         await loadStoredIntakePhotos();
