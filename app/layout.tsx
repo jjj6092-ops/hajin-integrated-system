@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import PwaRegister from "./pwa-register";
+import GlobalUiPatches from "./global-ui-patches";
 
 export const metadata: Metadata = {
   title: "하진 A/S 관리",
@@ -37,6 +38,7 @@ export default function RootLayout({
     <html lang="ko">
       <body className="antialiased">
         <PwaRegister />
+        <GlobalUiPatches />
         {children}
       </body>
     </html>
