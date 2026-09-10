@@ -301,7 +301,7 @@ const timeOrder=(time:string)=>{
 };
 
 const holidayCache=new Map<number,Record<string,string>>();
-const dateKeyOf=(date:Date)=>date.toISOString().slice(0,20);
+const dateKeyOf=(date:Date)=>date.toISOString().slice(0,10);
 const dateFromKey=(key:string)=>new Date(`${key}T12:00:00Z`);
 const addDate=(key:string,days:number)=>{
   const date=dateFromKey(key);
@@ -621,7 +621,7 @@ export default function Page() {
     const uploadedPaths: string[] = [];
     for (const [index, file] of intakePhotos.entries()) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = `${j.dbId}/접수사진/${Date.now()}-${index}-${safeName}`;
+      const path = `${j.dbId}/intake/${Date.now()}-${index}-${safeName}`;
       const { error: photoError } = await supabase.storage
         .from("as-job-photos")
         .upload(path, file, { upsert: false });
@@ -750,9 +750,10 @@ export default function Page() {
 
     // 신규 접수 때와 완전히 같은 방식으로 저장한다. Android 갤러리 File은 contentType을
     // 강제로 넣으면 일부 기기에서 업로드가 실패할 수 있어 Supabase가 원본 File을 그대로 처리하게 둔다.
+    const storageCategory = category === "접수사진" ? "intake" : category === "작업 전" ? "before" : category === "작업 후" ? "after" : String(category || "photo").replace(/[^a-zA-Z0-9._-]/g,"_") || "photo";
     for (const [index,file] of files.entries()) {
       const safeName=(file.name || `photo-${index}.jpg`).replace(/[^a-zA-Z0-9._-]/g,"_");
-      const path=`${targetJobId}/${category}/${Date.now()}-${index}-${safeName}`;
+      const path=`${targetJobId}/${storageCategory}/${Date.now()}-${index}-${safeName}`;
       const { error: uploadError }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false});
       if(uploadError){
         const message=`접수사진 업로드 실패: ${uploadError.message}`;
@@ -1706,7 +1707,7 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
     let cancelled=false;
     const load=async()=>{
       const entries=await Promise.all(visible.map(async(job)=>{
-        const folder=`${job.dbId}/접수사진`;
+        const folder=`${job.dbId}/intake`;
         const {data,error}=await supabase.storage.from("as-job-photos").list(folder,{limit:30,sortBy:{column:"created_at",order:"asc"}});
         if(error) return [String(job.dbId),[],`사진 조회 실패: ${error.message}`] as const;
         const files=(data||[]).filter(item=>item.name && item.name!==".emptyFolderPlaceholder");
@@ -2060,7 +2061,7 @@ function Detail({
     setLoadingStoredPhotos(true);
     setStoredPhotoError("");
     try{
-      const folder=`${job.dbId}/접수사진`;
+      const folder=`${job.dbId}/intake`;
       const {data,error}=await supabase.storage.from("as-job-photos").list(folder,{limit:100,sortBy:{column:"created_at",order:"asc"}});
       if(error){ setStoredIntakePhotos([]); setStoredPhotoError(`사진 조회 실패: ${error.message}`); return; }
       const files=(data||[]).filter(item=>item.name && item.name!==".emptyFolderPlaceholder");
