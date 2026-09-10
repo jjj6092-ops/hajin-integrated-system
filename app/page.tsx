@@ -744,14 +744,18 @@ export default function Page() {
 
   const uploadJobPhotos = async (category: string, files: File[], jobId?: number) => {
     const targetJobId = jobId ?? selected?.dbId;
-    if (!user || !targetJobId || !files.length) return true;
+    if (!files.length) return true;
+    if (!user) { say("사진 저장 실패: 로그인 정보가 없습니다"); window.alert("사진 저장 실패: 로그인 정보가 없습니다."); return false; }
+    if (!targetJobId) { say("사진 저장 실패: A/S 접수건 번호를 찾지 못했습니다"); window.alert("사진 저장 실패: A/S 접수건 번호를 찾지 못했습니다."); return false; }
     const uploadedPaths: string[] = [];
     for (const [index,file] of files.entries()) {
       const safeName=(file.name || `photo-${index}.jpg`).replace(/[^a-zA-Z0-9._-]/g,"_");
       const path=`${targetJobId}/${category}/${Date.now()}-${index}-${safeName}`;
       const { error }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false,contentType:file.type || undefined});
       if(error){
-        say(`사진 저장 실패: ${error.message}`);
+        const message=`사진 저장 실패: ${error.message}`;
+        say(message);
+        window.alert(message);
         return false;
       }
       uploadedPaths.push(path);
@@ -2105,21 +2109,37 @@ function Detail({
   };
   const saveEdits=async()=>{
     if(savingEdit) return null;
+    const pendingPhotos=[...intakePhotos];
     setSavingEdit(true);
     try{
+      // 사진은 상세 데이터 저장으로 인한 재렌더링 전에 먼저 서버에 올린다.
+      // 이렇게 하면 선택한 사진 state가 초기화되면서 업로드 대상이 사라지는 문제를 막을 수 있다.
+      if(pendingPhotos.length){
+        const photoSaved=await uploadPhotos("접수사진",pendingPhotos,job.dbId);
+        if(photoSaved===false){
+          window.alert("접수사진 저장에 실패했습니다. 화면에 표시된 오류 내용을 확인해주세요.");
+          return null;
+        }
+      }
       const next=await saveJob(edit, true);
-      if(!next) return null;
-      if(intakePhotos.length){
-        const newPhotoCount=intakePhotos.length;
-        const photoSaved=await uploadPhotos("접수사진",intakePhotos,next.dbId);
-        if(photoSaved===false) return null;
+      if(!next){
+        if(pendingPhotos.length) window.alert("사진은 업로드됐지만 접수 수정내용 저장에 실패했습니다.");
+        return null;
+      }
+      if(pendingPhotos.length){
         setIntakePhotos([]);
         await loadStoredIntakePhotos();
-        say(`수정 내용과 접수사진 ${newPhotoCount}장이 서버에 저장됐습니다`);
+        say(`수정 내용과 접수사진 ${pendingPhotos.length}장이 서버에 저장됐습니다`);
+        window.alert(`접수사진 ${pendingPhotos.length}장과 수정 내용이 저장됐습니다.`);
       } else {
         say("접수 내용을 수정했습니다");
       }
       return next;
+    } catch(error:any){
+      const message=error?.message || String(error || "알 수 없는 오류");
+      say(`저장 실패: ${message}`);
+      window.alert(`저장 실패: ${message}`);
+      return null;
     } finally { setSavingEdit(false); }
   };
   const moveToDispatch=async()=>{
