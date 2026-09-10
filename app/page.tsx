@@ -301,7 +301,7 @@ const timeOrder=(time:string)=>{
 };
 
 const holidayCache=new Map<number,Record<string,string>>();
-const dateKeyOf=(date:Date)=>date.toISOString().slice(0,10);
+const dateKeyOf=(date:Date)=>date.toISOString().slice(0,20);
 const dateFromKey=(key:string)=>new Date(`${key}T12:00:00Z`);
 const addDate=(key:string,days:number)=>{
   const date=dateFromKey(key);
@@ -1583,7 +1583,7 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
   const appendIntakePhotos=(files:File[])=>{
     const images=files.filter(file=>file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name));
     if(!images.length) return;
-    setIntakePhotos(current=>[...current,...images].slice(0,10));
+    setIntakePhotos(current=>[...current,...images].slice(0,20));
   };
 
   const submit=async(event:React.FormEvent<HTMLFormElement>)=>{
@@ -2079,6 +2079,22 @@ function Detail({
 
   const setField=(key:keyof typeof edit,value:string)=>setEdit(current=>({...current,[key]:value}));
   const appendFiles=(category:string,files:File[])=>setPhotos(current=>({...current,[category]:[...(current[category]||[]),...files]}));
+  const appendIntakePhotos=(files:File[])=>{
+    const images=files.filter(file=>{
+      const type=String(file.type||"").toLowerCase();
+      const name=String(file.name||"").toLowerCase();
+      return !type || type.startsWith("image/") || /\.(jpg|jpeg|png|webp|gif|heic|heif|bmp)$/i.test(name);
+    });
+    if(!images.length){
+      window.alert("선택한 파일을 사진으로 인식하지 못했습니다.");
+      return;
+    }
+    setIntakePhotos(current=>{
+      const next=[...current,...images].slice(0,20);
+      if(current.length+images.length>20) setTimeout(()=>window.alert("접수사진은 최대 20장까지 추가할 수 있습니다."),0);
+      return next;
+    });
+  };
   const saveEdits=async()=>{
     if(savingEdit) return null;
     setSavingEdit(true);
@@ -2163,8 +2179,8 @@ function Detail({
                 <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `새 사진 ${intakePhotos.length}장 선택됨 · 저장 전` : storedIntakePhotos.length ? `서버 저장 완료 · ${storedIntakePhotos.length}장` : "필요할 때만 추가"}</p>
               </div>
               <div className="flex gap-2">
-                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={e=>{appendIntakePhotos(Array.from(e.target.files||[]));e.currentTarget.value="";}}/></label>
-                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onChange={e=>{appendIntakePhotos(Array.from(e.target.files||[]));e.currentTarget.value="";}}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onClick={e=>{e.currentTarget.value="";}} onChange={e=>{appendIntakePhotos(Array.from(e.currentTarget.files||[]));e.currentTarget.value="";}}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onClick={e=>{e.currentTarget.value="";}} onChange={e=>{appendIntakePhotos(Array.from(e.currentTarget.files||[]));e.currentTarget.value="";}}/></label>
               </div>
             </div>
             {loadingStoredPhotos&&<p className="mt-3 text-xs font-bold text-slate-400">사진 불러오는 중...</p>}
