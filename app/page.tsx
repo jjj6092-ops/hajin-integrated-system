@@ -109,6 +109,20 @@ const mergeBusinessDocuments = (remote: BusinessDocument[], local: BusinessDocum
     .filter(row => { const key = signature(row); if (seen.has(key)) return false; seen.add(key); return true; })
     .sort((a,b)=>new Date(b.created_at).getTime()-new Date(a.created_at).getTime());
 };
+const deleteBusinessDocuments = async (rows: BusinessDocument[], label: string) => {
+  if (typeof window !== "undefined" && !window.confirm(`${label}를 삭제하시겠습니까?\n삭제한 문서는 복구할 수 없습니다.`)) return false;
+  const remoteIds = rows.map(row=>row.id).filter(id=>!String(id).startsWith("local-"));
+  if (remoteIds.length) {
+    const { error } = await supabase.from("business_documents").delete().in("id", remoteIds);
+    if (error) { window.alert(`${label} 삭제에 실패했습니다.`); return false; }
+  }
+  const deleteIds = new Set(rows.map(row=>String(row.id)));
+  const deleteSignatures = new Set(rows.map(row=>[row.document_type,row.company,row.item_name,row.model_name,row.quantity,row.unit_price,row.memo].join("|")));
+  writeLocalBusinessDocuments(readLocalBusinessDocuments().filter(row=>
+    !deleteIds.has(String(row.id)) && !deleteSignatures.has([row.document_type,row.company,row.item_name,row.model_name,row.quantity,row.unit_price,row.memo].join("|"))
+  ));
+  return true;
+};
 
 type WorkflowStep = "접수" | "출동" | "작업완료" | "정산완료";
 type JobWorkflow = {
@@ -843,6 +857,7 @@ export default function Page() {
           {view === "detail" && selected && (
             <Detail
               job={selected}
+              jobs={jobs}
               update={updateStatus}
               save={saveResolution}
               saveSchedule={saveSchedule}
@@ -1799,6 +1814,7 @@ function Progress({
 }
 function Detail({
   job,
+  jobs,
   update,
   save,
   saveSchedule,
@@ -1809,6 +1825,7 @@ function Detail({
   openTransaction,
 }: {
   job: Job;
+  jobs: Job[];
   update: (s: Status) => Promise<void>;
   save: (v: string) => Promise<void>;
   saveSchedule: (site:string,date:string,time:string) => Promise<void>;
@@ -1819,6 +1836,27 @@ function Detail({
   openTransaction: () => void;
 }) {
   const schedule = scheduleOf(job.date || "");
+  const receiptDate = (() => {
+    const d = new Date(job.createdAt);
+    const yy = String(d.getFullYear()).slice(-2);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yy}${mm}${dd}`;
+  })();
+  const receiptSequence = (() => {
+    const sameDay = jobs
+      .filter((item) => {
+        const d = new Date(item.createdAt);
+        const yy = String(d.getFullYear()).slice(-2);
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yy}${mm}${dd}` === receiptDate;
+      })
+      .sort((a,b)=>new Date(a.createdAt).getTime()-new Date(b.createdAt).getTime());
+    const index = sameDay.findIndex((item)=>item.dbId===job.dbId);
+    return String(index >= 0 ? index + 1 : 1).padStart(3, "0");
+  })();
+  const receiptNo = `AS-${receiptDate}-${receiptSequence}`;
   const [edit,setEdit]=useState({
     company:job.company,site:job.site,manager:job.manager,phone:job.phone,machine:job.machine,issue:job.issue,
     date:schedule.dateKey || koreaDateKey(),time:/^\d{1,2}:\d{2}$/.test(schedule.time)?schedule.time:"",worker:job.worker,
@@ -1883,11 +1921,11 @@ function Detail({
       <section className="rounded-3xl bg-white p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-bold text-slate-400">{job.id}</p>
+            <p className="text-sm font-black text-slate-500">접수번호 {receiptNo}</p>
             <h2 className="mt-1 text-xl font-black">A/S 접수 수정</h2>
           </div>
           {workflow.step === "접수" ? (
-            <button type="button" onClick={()=>void moveToDispatch()} disabled={savingEdit} className="shrink-0 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm disabled:bg-slate-300">출동</button>
+            <button type="button" onClick={()=>void moveToDispatch()} disabled={savingEdit} className="shrink-0 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-md ring-2 ring-blue-200 active:bg-blue-700 disabled:bg-slate-300 disabled:ring-0">출동</button>
           ) : (
             <span className="shrink-0 rounded-full bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">{workflow.step}</span>
           )}
@@ -2102,6 +2140,7 @@ function ProposalList(){
           <p className="mt-4 flex justify-between rounded-xl bg-rose-50 p-3 font-black text-rose-700"><span>제안 금액</span><span>{Number(document.unit_price).toLocaleString()}원</span></p>
           {document.recipient_email&&<p className="mt-3 text-xs text-slate-500">담당자 이메일 · {document.recipient_email}</p>}
           <OfficeExportButtons data={exportData}/>
+          <button type="button" onClick={async()=>{if(await deleteBusinessDocuments([document],"제안서")) setDocuments(current=>current.filter(row=>String(row.id)!==String(document.id)));}} className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">제안서 삭제</button>
         </div>
       </details>;
     })}
@@ -2203,7 +2242,7 @@ function SimpleOfficeList({type}:{type:SimpleOfficeType}){
       const exportData:OfficeExportData={title:meta.label,company:document.company,date:writtenAt,headers:[meta.title,meta.category,"상세 내용","금액"],rows:[[document.item_name,document.model_name||"-",document.memo,`${Number(document.unit_price).toLocaleString()}원`]]};
       return <details key={document.id} className="group overflow-hidden rounded-[22px] bg-white shadow-sm">
         <summary className="flex cursor-pointer list-none items-center gap-3 p-4"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700"><FileText size={21}/></span><span className="min-w-0 flex-1"><b className="block truncate">{document.item_name}</b><small className="mt-1 block text-xs text-slate-500">{document.company} · {writtenAt}</small></span><ChevronRight className="shrink-0 transition group-open:rotate-90" size={18}/></summary>
-        <div className="border-t border-slate-100 bg-slate-50 p-4 text-sm"><p className="font-bold text-slate-500">{meta.category}</p><p className="mt-1 font-black">{document.model_name||"구분 없음"}</p><p className="mt-4 font-bold text-slate-500">상세 내용</p><p className="mt-1 whitespace-pre-wrap leading-6">{document.memo}</p><p className="mt-4 flex justify-between rounded-xl bg-blue-50 p-3 font-black text-blue-700"><span>관련 금액</span><span>{Number(document.unit_price).toLocaleString()}원</span></p><OfficeExportButtons data={exportData}/></div>
+        <div className="border-t border-slate-100 bg-slate-50 p-4 text-sm"><p className="font-bold text-slate-500">{meta.category}</p><p className="mt-1 font-black">{document.model_name||"구분 없음"}</p><p className="mt-4 font-bold text-slate-500">상세 내용</p><p className="mt-1 whitespace-pre-wrap leading-6">{document.memo}</p><p className="mt-4 flex justify-between rounded-xl bg-blue-50 p-3 font-black text-blue-700"><span>관련 금액</span><span>{Number(document.unit_price).toLocaleString()}원</span></p><OfficeExportButtons data={exportData}/><button type="button" onClick={async()=>{if(await deleteBusinessDocuments([document],meta.label)) setDocuments(current=>current.filter(row=>String(row.id)!==String(document.id)));}} className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">{meta.label} 삭제</button></div>
       </details>;
     })}
   </div>;
@@ -2362,6 +2401,7 @@ function EstimateList({type}:{type:"estimate"|"transaction"}){
             <p className="mt-2 flex justify-between border-t border-blue-200 pt-2 font-black text-blue-800"><span>총 견적금액</span><span>{total.toLocaleString()}원</span></p>
           </div>
           <OfficeExportButtons data={exportData}/>
+          <button type="button" onClick={async()=>{if(await deleteBusinessDocuments(items,documentLabel)) {const ids=new Set(items.map(item=>String(item.id))); setDocuments(current=>current.filter(row=>!ids.has(String(row.id))));}}} className="mt-3 w-full rounded-xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">{documentLabel} 삭제</button>
         </div>
       </details>;
     })}
