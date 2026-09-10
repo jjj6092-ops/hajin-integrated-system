@@ -1,51 +1,35 @@
 import http from "node:http";
-import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
+import { createReadStream, existsSync, statSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from "node:fs";
+import { extname, join, normalize, dirname } from "node:path";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
-const port = Number(process.env.PORT || 3000);
-const adminId = (process.env.ADMIN_ID || "admin").trim().toLowerCase();
-const adminPassword = process.env.ADMIN_PASSWORD || "hajin1234!";
-const publicDir = join(process.cwd(), "dist/client");
-const sessions = new Map();
-if (!process.env.ADMIN_ID || !process.env.ADMIN_PASSWORD) {
-  console.warn("관리자 환경변수가 없어 초기 계정으로 시작합니다. 배포 후 환경변수를 설정하세요.");
-}
-const hash = (value) => createHash("sha256").update(value).digest();
-const cookies = (req) => Object.fromEntries((req.headers.cookie || "").split(";").filter(Boolean).map((v) => v.trim().split(/=(.*)/s).slice(0, 2).map(decodeURIComponent)));
-const userFor = (req) => { const token = cookies(req).hajin_session; return token && sessions.has(token) ? sessions.get(token) : null; };
-const json = (res, status, data, headers = {}) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", ...headers }); res.end(JSON.stringify(data)); };
-const body = (req) => new Promise((resolve, reject) => { let raw = ""; req.on("data", (c) => { raw += c; if (raw.length > 100000) reject(new Error("too large")); }); req.on("end", () => { try { resolve(JSON.parse(raw || "{}")); } catch { reject(new Error("bad json")); } }); });
-const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json" };
+const port=Number(process.env.PORT||3000), adminId=(process.env.ADMIN_ID||"admin").trim().toLowerCase(), adminPassword=process.env.ADMIN_PASSWORD||"hajin1234!";
+const publicDir=join(process.cwd(),"dist/client"), dataDir=process.env.DATA_DIR||join(process.cwd(),"data"), uploadDir=join(dataDir,"uploads"), dbFile=join(dataDir,"hajin-data.json");
+mkdirSync(uploadDir,{recursive:true}); if(!existsSync(dbFile)) writeFileSync(dbFile,JSON.stringify({as_jobs:[],business_documents:[]},null,2));
+const sessions=new Map(), hash=v=>createHash("sha256").update(v).digest();
+const cookies=req=>Object.fromEntries((req.headers.cookie||"").split(";").filter(Boolean).map(v=>v.trim().split(/=(.*)/s).slice(0,2).map(decodeURIComponent)));
+const userFor=req=>{const t=cookies(req).hajin_session;return t&&sessions.has(t)?sessions.get(t):null;};
+const json=(res,status,data,headers={})=>{res.writeHead(status,{"Content-Type":"application/json; charset=utf-8",...headers});res.end(JSON.stringify(data));};
+const body=req=>new Promise((resolve,reject)=>{let chunks=[];let n=0;req.on("data",c=>{n+=c.length;if(n>25*1024*1024){reject(new Error("too large"));req.destroy();}else chunks.push(c);});req.on("end",()=>resolve(Buffer.concat(chunks)));req.on("error",reject);});
+const readDb=()=>{try{return JSON.parse(readFileSync(dbFile,"utf8"));}catch{return {as_jobs:[],business_documents:[]};}}, writeDb=db=>writeFileSync(dbFile,JSON.stringify(db,null,2));
+const safePath=p=>{const clean=normalize(String(p||"")).replace(/^(\.\.[/\\])+/g,"").replace(/^[/\\]+/,"");const full=join(uploadDir,clean);if(!full.startsWith(uploadDir))throw new Error("bad path");return full;};
+const mime={".html":"text/html; charset=utf-8",".js":"text/javascript; charset=utf-8",".css":"text/css; charset=utf-8",".svg":"image/svg+xml",".jpg":"image/jpeg",".jpeg":"image/jpeg",".png":"image/png",".webp":"image/webp",".heic":"image/heic",".heif":"image/heif",".json":"application/json; charset=utf-8",".webmanifest":"application/manifest+json"};
+function multipartFile(buf,contentType){const m=/boundary=(.+)$/.exec(contentType||"");if(!m)throw new Error("multipart");const boundary=Buffer.from(`--${m[1]}`);const parts=[];let pos=0;while(true){let s=buf.indexOf(boundary,pos);if(s<0)break;let e=buf.indexOf(boundary,s+boundary.length);if(e<0)break;parts.push(buf.subarray(s+boundary.length,e));pos=e;}let path="",file=null;for(const part of parts){const sep=part.indexOf(Buffer.from("\r\n\r\n"));if(sep<0)continue;const head=part.subarray(0,sep).toString();let val=part.subarray(sep+4);if(val.subarray(val.length-2).toString()==="\r\n")val=val.subarray(0,val.length-2);if(/name="path"/.test(head))path=val.toString();if(/name="file"/.test(head))file=val;}if(!path||!file)throw new Error("missing upload");return {path,file};}
 
-const server = http.createServer(async (req, res) => {
-  try {
-    if (req.url === "/api/session" && req.method === "GET") return json(res, 200, { user: userFor(req) });
-    if (req.url === "/api/login" && req.method === "POST") {
-      const data = await body(req);
-      const id = String(data.email || "").split("@")[0].trim().toLowerCase();
-      const password = String(data.password || "");
-      const ok = id === adminId && timingSafeEqual(hash(password), hash(adminPassword));
-      if (!ok) return json(res, 401, { error: "아이디 또는 비밀번호가 맞지 않습니다." });
-      const token = randomBytes(32).toString("hex");
-      const user = { id: adminId, email: `${adminId}@hajin.internal` };
-      sessions.set(token, user);
-      return json(res, 200, { user }, { "Set-Cookie": `hajin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200` });
-    }
-    if (req.url === "/api/logout" && req.method === "POST") {
-      const token = cookies(req).hajin_session;
-      if (token) sessions.delete(token);
-      return json(res, 200, { ok: true }, { "Set-Cookie": "hajin_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" });
-    }
-    if (req.url?.startsWith("/api/")) return json(res, 404, { error: "없는 기능입니다." });
-    const pathname = decodeURIComponent((req.url || "/").split("?")[0]);
-    const clean = normalize(pathname).replace(/^(\.\.[/\\])+/, "");
-    let file = join(publicDir, clean === "/" ? "index.html" : clean);
-    if (!file.startsWith(publicDir) || !existsSync(file) || statSync(file).isDirectory()) file = join(publicDir, "index.html");
-    res.writeHead(200, { "Content-Type": types[extname(file)] || "application/octet-stream", "Cache-Control": extname(file) === ".html" ? "no-cache" : "public, max-age=31536000, immutable" });
-    createReadStream(file).pipe(res);
-  } catch {
-    json(res, 400, { error: "요청 형식이 올바르지 않습니다." });
-  }
-});
-server.listen(port, "0.0.0.0", () => console.log(`하진 통합시스템 실행: ${port}`));
+const server=http.createServer(async(req,res)=>{try{
+ const url=new URL(req.url||"/","http://local");
+ if(url.pathname==="/api/session"&&req.method==="GET")return json(res,200,{user:userFor(req)});
+ if(url.pathname==="/api/login"&&req.method==="POST"){const d=JSON.parse((await body(req)).toString()||"{}");const id=String(d.email||"").split("@")[0].trim().toLowerCase(),pw=String(d.password||"");if(id!==adminId||!timingSafeEqual(hash(pw),hash(adminPassword)))return json(res,401,{error:"아이디 또는 비밀번호가 맞지 않습니다."});const token=randomBytes(32).toString("hex"),user={id:adminId,email:`${adminId}@hajin.internal`};sessions.set(token,user);return json(res,200,{user},{"Set-Cookie":`hajin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`});}
+ if(url.pathname==="/api/logout"&&req.method==="POST"){const t=cookies(req).hajin_session;if(t)sessions.delete(t);return json(res,200,{ok:true},{"Set-Cookie":"hajin_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});}
+ if(url.pathname.startsWith("/api/")&&!userFor(req))return json(res,401,{error:"로그인이 필요합니다."});
+ if(url.pathname==="/api/migrate"&&req.method==="POST"){const d=JSON.parse((await body(req)).toString()||"{}");if(!["as_jobs","business_documents"].includes(d.table)||!Array.isArray(d.rows))return json(res,400,{error:"이전할 데이터가 올바르지 않습니다."});const db=readDb();if((db[d.table]||[]).length===0){db[d.table]=d.rows;writeDb(db);}return json(res,200,{ok:true,count:(db[d.table]||[]).length});}
+ if(url.pathname==="/api/data"&&req.method==="POST"){const q=JSON.parse((await body(req)).toString()||"{}");if(q.table==="staff_profiles")return json(res,200,{data:{employee_id:adminId,display_name:adminId,role:"admin",active:true}});if(!["as_jobs","business_documents"].includes(q.table))return json(res,400,{error:"허용되지 않은 데이터입니다."});const db=readDb();let rows=Array.isArray(db[q.table])?db[q.table]:[];const match=r=>(q.filters||[]).every(f=>f.op==="in"?f.value.includes(r[f.key]):r[f.key]===f.value);if(q.action==="insert"){const vals=Array.isArray(q.payload)?q.payload:[q.payload], now=new Date().toISOString();const added=vals.map((v,i)=>({...v,id:q.table==="as_jobs"?(Math.max(0,...rows.map(r=>Number(r.id)||0))+1+i):(v.id||randomBytes(12).toString("hex")),created_at:v.created_at||now,resolution:v.resolution||""}));rows=[...added,...rows];db[q.table]=rows;writeDb(db);return json(res,200,{data:q.single?added[0]:added});}if(q.action==="update"){let changed=[];rows=rows.map(r=>match(r)?(changed.push({...r,...q.payload}),{...r,...q.payload}):r);db[q.table]=rows;writeDb(db);return json(res,200,{data:q.single?(changed[0]||null):changed});}if(q.action==="delete"){const removed=rows.filter(match);db[q.table]=rows.filter(r=>!match(r));writeDb(db);return json(res,200,{data:removed});}let result=rows.filter(match);if(q.orderBy)result.sort((a,b)=>String(a[q.orderBy.key]||"").localeCompare(String(b[q.orderBy.key]||""))*(q.orderBy.ascending?1:-1));return json(res,200,{data:q.single?(result[0]||null):result});}
+ if(url.pathname==="/api/photos"&&req.method==="POST"){const {path,file}=multipartFile(await body(req),req.headers["content-type"]);const full=safePath(path);mkdirSync(dirname(full),{recursive:true});writeFileSync(full,file);return json(res,200,{ok:true});}
+ if(url.pathname==="/api/photos/remove"&&req.method==="POST"){const d=JSON.parse((await body(req)).toString()||"{}");for(const p of d.paths||[]){const f=safePath(p);if(existsSync(f))unlinkSync(f);}return json(res,200,{ok:true});}
+ if(url.pathname==="/api/photos/url"&&req.method==="GET"){const p=String(url.searchParams.get("path")||"");if(!existsSync(safePath(p)))return json(res,404,{error:"사진을 찾을 수 없습니다."});return json(res,200,{url:`/api/photo-file?path=${encodeURIComponent(p)}`});}
+ if(url.pathname==="/api/photos/list"&&req.method==="GET"){const folder=String(url.searchParams.get("folder")||""),dir=safePath(folder),limit=Math.min(200,Number(url.searchParams.get("limit")||100));let data=[];if(existsSync(dir)&&statSync(dir).isDirectory())data=readdirSync(dir).map(name=>({name,created_at:statSync(join(dir,name)).birthtime.toISOString()})).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0,limit);return json(res,200,{data});}
+ if(url.pathname==="/api/photo-file"&&req.method==="GET"){const f=safePath(String(url.searchParams.get("path")||""));if(!existsSync(f))return json(res,404,{error:"사진을 찾을 수 없습니다."});res.writeHead(200,{"Content-Type":mime[extname(f).toLowerCase()]||"application/octet-stream","Cache-Control":"private, max-age=3600"});return createReadStream(f).pipe(res);}
+ if(url.pathname.startsWith("/api/"))return json(res,404,{error:"없는 기능입니다."});
+ const clean=normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/g,"");let file=join(publicDir,clean==="/"?"index.html":clean);if(!file.startsWith(publicDir)||!existsSync(file)||statSync(file).isDirectory())file=join(publicDir,"index.html");res.writeHead(200,{"Content-Type":mime[extname(file)]||"application/octet-stream","Cache-Control":extname(file)===".html"?"no-cache":"public, max-age=31536000, immutable"});createReadStream(file).pipe(res);
+}catch(e){console.error(e);json(res,400,{error:e?.message||"요청 형식이 올바르지 않습니다."});}});
+server.listen(port,"0.0.0.0",()=>console.log(`하진 통합시스템 실행: ${port} / 데이터: ${dataDir}`));
