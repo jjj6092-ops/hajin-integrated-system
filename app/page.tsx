@@ -1673,6 +1673,10 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
   const [scheduleDate,setScheduleDate]=useState("");
   const [scheduleTime,setScheduleTime]=useState("");
   const [savingSchedule,setSavingSchedule]=useState(false);
+  const [workerJob,setWorkerJob]=useState<Job|null>(null);
+  const [worker1,setWorker1]=useState("");
+  const [worker2,setWorker2]=useState("");
+  const [savingWorker,setSavingWorker]=useState(false);
   const [photoMap,setPhotoMap]=useState<Record<string,{name:string;url:string}[]>>({});
   const descriptions: Record<WorkflowStep,string> = {
     "접수":"접수 후 일정·견적을 확인할 업무",
@@ -1713,6 +1717,27 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
     setScheduleJob(null);
     await refreshJobs();
   };
+  const splitWorkers=(value:string)=>{
+    const parts=String(value||"").split(/\s*(?:\/|,|·|&|\+|그리고)\s*/).map(v=>v.trim()).filter(Boolean);
+    return [parts[0]||"",parts[1]||""];
+  };
+  const beginWorkerChange=(job:Job)=>{
+    const [first,second]=splitWorkers(job.worker);
+    setWorkerJob(job);
+    setWorker1(first);
+    setWorker2(second);
+  };
+  const saveQuickWorker=async()=>{
+    if(!workerJob) return;
+    const names=[worker1.trim(),worker2.trim()].filter(Boolean).slice(0,2);
+    if(!names.length){ window.alert("출동기사를 1명 이상 입력해주세요."); return; }
+    setSavingWorker(true);
+    const {error}=await supabase.from("as_jobs").update({worker:names.join(" / ")}).eq("id",workerJob.dbId);
+    setSavingWorker(false);
+    if(error){ window.alert("출동기사 변경에 실패했습니다."); return; }
+    setWorkerJob(null);
+    await refreshJobs();
+  };
   return <div className="mt-5">
     <div className="mb-4 flex items-center gap-3">
       <button type="button" onClick={close} className="grid size-10 shrink-0 place-items-center rounded-2xl bg-white shadow-sm"><ChevronLeft size={20}/></button>
@@ -1729,11 +1754,15 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
             <div className="min-w-0">
               <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
               <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-xl bg-slate-50 px-2.5 py-1.5 text-[11px] font-black text-slate-700">출동기사 · {job.worker || "미배정"}</span>
+                <button type="button" onClick={()=>beginWorkerChange(job)} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-700">기사변경</button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <b className="block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
                 <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>
               </div>
             </div>
-            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step === "접수" ? "출동" : step}</span>
+            <span className="shrink-0 rounded-full bg-blue-600 px-3 py-1.5 text-[11px] font-black text-white shadow-sm">{step === "접수" ? "출동" : step}</span>
           </div>
           <div className="mt-3 grid grid-cols-[1fr_112px] gap-3">
             <button type="button" onClick={()=>open(job)} className="min-w-0 text-left">
@@ -1758,6 +1787,17 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
         </div>;
       })}
     </div>
+    {workerJob && <div className="fixed inset-0 z-[105] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-[24px] bg-white p-5 shadow-2xl">
+        <div className="flex items-center justify-between"><div><p className="text-xs font-black text-blue-600">출동기사 변경</p><h3 className="mt-1 text-lg font-black">{workerJob.company} 출동기사</h3></div><button type="button" onClick={()=>setWorkerJob(null)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">취소</button></div>
+        <p className="mt-2 text-xs text-slate-500">기사 1명 또는 최대 2명까지 지정할 수 있습니다.</p>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <label className="text-xs font-black text-slate-600">출동기사 1<input value={worker1} onChange={e=>setWorker1(e.target.value)} className="input mt-1" placeholder="기사명" /></label>
+          <label className="text-xs font-black text-slate-600">출동기사 2<input value={worker2} onChange={e=>setWorker2(e.target.value)} className="input mt-1" placeholder="선택 입력" /></label>
+        </div>
+        <button type="button" disabled={savingWorker} onClick={saveQuickWorker} className="mt-4 w-full rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white disabled:bg-slate-300">{savingWorker?"변경 중...":"출동기사 변경 저장"}</button>
+      </div>
+    </div>}
     {scheduleJob && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-[24px] bg-white p-5 shadow-2xl">
         <div className="flex items-center justify-between"><div><p className="text-xs font-black text-blue-600">일정변경</p><h3 className="mt-1 text-lg font-black">{scheduleJob.company} 방문 일정</h3></div><button type="button" onClick={()=>setScheduleJob(null)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">취소</button></div>
@@ -1923,7 +1963,7 @@ function Detail({
   saveSchedule: (site:string,date:string,time:string) => Promise<void>;
   saveJob: (values:{company:string;site:string;manager:string;phone:string;machine:string;issue:string;date:string;time:string;worker:string;requiredEquipment:string;specialNotes:string;}) => Promise<Job | null>;
   deleteJob: () => Promise<boolean>;
-  uploadPhotos: (category:string,files:File[]) => Promise<void>;
+  uploadPhotos: (category:string,files:File[]) => Promise<boolean>;
   openEstimate: () => void;
   openTransaction: () => void;
 }) {
@@ -2012,11 +2052,12 @@ function Detail({
       const next=await saveJob(edit, true);
       if(!next) return null;
       if(intakePhotos.length){
+        const newPhotoCount=intakePhotos.length;
         const photoSaved=await uploadPhotos("접수사진",intakePhotos);
         if(photoSaved===false) return null;
         setIntakePhotos([]);
         await loadStoredIntakePhotos();
-        say(`접수 내용과 접수사진 ${intakePhotos.length}장이 서버에 저장됐습니다`);
+        say(`수정 내용과 접수사진 ${newPhotoCount}장이 서버에 저장됐습니다`);
       } else {
         say("접수 내용을 수정했습니다");
       }
@@ -2085,11 +2126,11 @@ function Detail({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <b className="text-sm text-blue-800">접수사진</b>
-                <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `새 사진 ${intakePhotos.length}장 선택됨` : storedIntakePhotos.length ? `저장된 사진 ${storedIntakePhotos.length}장` : "필요할 때만 추가"}</p>
+                <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `새 사진 ${intakePhotos.length}장 선택됨 · 저장 전` : storedIntakePhotos.length ? `서버 저장 완료 · ${storedIntakePhotos.length}장` : "필요할 때만 추가"}</p>
               </div>
               <div className="flex gap-2">
-                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={e=>{setIntakePhotos(current=>[...current,...Array.from(e.target.files||[])]);e.currentTarget.value="";}}/></label>
-                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onChange={e=>{setIntakePhotos(current=>[...current,...Array.from(e.target.files||[])]);e.currentTarget.value="";}}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={e=>{appendIntakePhotos(Array.from(e.target.files||[]));e.currentTarget.value="";}}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onChange={e=>{appendIntakePhotos(Array.from(e.target.files||[]));e.currentTarget.value="";}}/></label>
               </div>
             </div>
             {loadingStoredPhotos&&<p className="mt-3 text-xs font-bold text-slate-400">사진 불러오는 중...</p>}
