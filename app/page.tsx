@@ -745,34 +745,26 @@ export default function Page() {
   const uploadJobPhotos = async (category: string, files: File[], jobId?: number) => {
     const targetJobId = jobId ?? selected?.dbId;
     if (!files.length) return true;
-    if (!user) { say("사진 저장 실패: 로그인 정보가 없습니다"); window.alert("사진 저장 실패: 로그인 정보가 없습니다."); return false; }
-    if (!targetJobId) { say("사진 저장 실패: A/S 접수건 번호를 찾지 못했습니다"); window.alert("사진 저장 실패: A/S 접수건 번호를 찾지 못했습니다."); return false; }
-    const uploadedPaths: string[] = [];
+    if (!user) { const m="사진 저장 실패: 로그인 정보가 없습니다."; say(m); window.alert(m); return false; }
+    if (!targetJobId) { const m="사진 저장 실패: A/S 접수건 번호를 찾지 못했습니다."; say(m); window.alert(m); return false; }
+
+    // 신규 접수 때와 완전히 같은 방식으로 저장한다. Android 갤러리 File은 contentType을
+    // 강제로 넣으면 일부 기기에서 업로드가 실패할 수 있어 Supabase가 원본 File을 그대로 처리하게 둔다.
     for (const [index,file] of files.entries()) {
       const safeName=(file.name || `photo-${index}.jpg`).replace(/[^a-zA-Z0-9._-]/g,"_");
       const path=`${targetJobId}/${category}/${Date.now()}-${index}-${safeName}`;
-      const { error }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false,contentType:file.type || undefined});
-      if(error){
-        const message=`사진 저장 실패: ${error.message}`;
-        say(message);
-        window.alert(message);
-        return false;
+      const { error: uploadError }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false});
+      if(uploadError){
+        const message=`접수사진 업로드 실패: ${uploadError.message}`;
+        say(message); window.alert(message); return false;
       }
-      uploadedPaths.push(path);
-    }
-    // 업로드가 끝난 뒤 서버 목록에서 실제 저장 여부를 한 번 더 확인한다.
-    const folder=`${targetJobId}/${category}`;
-    const {data:listData,error:listError}=await supabase.storage.from("as-job-photos").list(folder,{limit:100,sortBy:{column:"created_at",order:"desc"}});
-    if(listError){
-      // 조회 정책 문제여도 이미 업로드된 사진은 지우지 않는다.
-      say(`사진은 저장됐지만 조회 확인에 실패했습니다: ${listError.message}`);
-      return true;
-    }
-    const uploadedNames=new Set(uploadedPaths.map(path=>path.split("/").pop()));
-    const savedCount=(listData||[]).filter(item=>uploadedNames.has(item.name)).length;
-    if(savedCount < uploadedPaths.length){
-      say(`사진 ${uploadedPaths.length}장 중 ${savedCount}장만 저장 확인됐습니다`);
-      return savedCount > 0;
+
+      // list() 결과만 믿지 않고 방금 올린 정확한 경로로 즉시 읽기 검증한다.
+      const {data:signed,error:signedError}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
+      if(signedError || !signed?.signedUrl){
+        const message=`사진은 업로드됐지만 읽기 권한 확인 실패: ${signedError?.message || "signed URL 생성 실패"}`;
+        say(message); window.alert(message); return false;
+      }
     }
     return true;
   };
@@ -2109,28 +2101,30 @@ function Detail({
   };
   const saveEdits=async()=>{
     if(savingEdit) return null;
-    const pendingPhotos=[...intakePhotos];
+    const pendingPhotos=[...intakePhotos]; // 재렌더링돼도 실제 File 객체는 여기 보관
     setSavingEdit(true);
     try{
-      // 사진은 상세 데이터 저장으로 인한 재렌더링 전에 먼저 서버에 올린다.
-      // 이렇게 하면 선택한 사진 state가 초기화되면서 업로드 대상이 사라지는 문제를 막을 수 있다.
+      // 먼저 기존 수정내용을 정상 저장한다. 이후 job prop이 바뀌어 화면 state가 초기화돼도
+      // pendingPhotos에는 선택한 원본 File이 남아 있으므로 사진 업로드가 끊기지 않는다.
+      const next=await saveJob(edit, true);
+      if(!next){
+        window.alert("수정 내용 저장에 실패했습니다. 고객사/고장원인 입력값과 서버 연결을 확인해주세요.");
+        return null;
+      }
+
       if(pendingPhotos.length){
         const photoSaved=await uploadPhotos("접수사진",pendingPhotos,job.dbId);
         if(photoSaved===false){
-          window.alert("접수사진 저장에 실패했습니다. 화면에 표시된 오류 내용을 확인해주세요.");
-          return null;
+          // 사진이 실패해도 텍스트 수정은 이미 저장됐음을 명확히 알려준다.
+          window.alert("수정 내용은 저장됐지만 접수사진 저장에 실패했습니다. 방금 표시된 사진 오류 문구를 확인해주세요.");
+          return next;
         }
-      }
-      const next=await saveJob(edit, true);
-      if(!next){
-        if(pendingPhotos.length) window.alert("사진은 업로드됐지만 접수 수정내용 저장에 실패했습니다.");
-        return null;
-      }
-      if(pendingPhotos.length){
         setIntakePhotos([]);
+        // Storage 반영 직후 모바일에서 list가 늦게 갱신되는 경우를 대비해 짧게 기다렸다가 다시 읽는다.
+        await new Promise(resolve=>setTimeout(resolve,250));
         await loadStoredIntakePhotos();
         say(`수정 내용과 접수사진 ${pendingPhotos.length}장이 서버에 저장됐습니다`);
-        window.alert(`접수사진 ${pendingPhotos.length}장과 수정 내용이 저장됐습니다.`);
+        window.alert(`저장 완료: 접수사진 ${pendingPhotos.length}장`);
       } else {
         say("접수 내용을 수정했습니다");
       }
