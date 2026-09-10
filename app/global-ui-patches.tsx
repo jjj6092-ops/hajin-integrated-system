@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 export default function GlobalUiPatches() {
   useEffect(() => {
-    const applyWorkflowLabels = () => {
+    const applyWorkflowLabelsAndIcons = () => {
       const scheduleHeadings = Array.from(document.querySelectorAll("p")).filter((node) =>
         node.textContent?.trim().endsWith("오늘의 일정"),
       );
@@ -13,11 +13,32 @@ export default function GlobalUiPatches() {
         const section = heading.closest("section");
         if (!section) return;
 
-        section.querySelectorAll("button p").forEach((label) => {
-          const text = label.textContent?.trim();
-          if (text === "접수") label.textContent = "접수완료";
-          if (text === "출동") label.textContent = "출동/작업진행중";
+        const buttons = Array.from(section.querySelectorAll("button"));
+        let dispatchButton: HTMLButtonElement | null = null;
+        let completeButton: HTMLButtonElement | null = null;
+
+        buttons.forEach((button) => {
+          const labels = Array.from(button.querySelectorAll("p"));
+          labels.forEach((label) => {
+            const text = label.textContent?.trim();
+            if (text === "접수") label.textContent = "접수완료";
+            if (text === "출동") label.textContent = "출동/작업진행중";
+            if (label.textContent?.trim() === "출동/작업진행중") dispatchButton = button;
+            if (label.textContent?.trim() === "작업완료") completeButton = button;
+          });
         });
+
+        if (section.getAttribute("data-workflow-icons-swapped") !== "true" && dispatchButton && completeButton) {
+          const dispatchIcon = dispatchButton.querySelector("svg");
+          const completeIcon = completeButton.querySelector("svg");
+          if (dispatchIcon && completeIcon) {
+            const dispatchMarkup = dispatchIcon.outerHTML;
+            const completeMarkup = completeIcon.outerHTML;
+            dispatchIcon.outerHTML = completeMarkup;
+            completeIcon.outerHTML = dispatchMarkup;
+            section.setAttribute("data-workflow-icons-swapped", "true");
+          }
+        }
       });
     };
 
@@ -42,7 +63,7 @@ export default function GlobalUiPatches() {
     };
 
     const applyAll = () => {
-      applyWorkflowLabels();
+      applyWorkflowLabelsAndIcons();
       markLogosClickable();
     };
 
