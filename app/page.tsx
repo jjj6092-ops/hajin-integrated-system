@@ -1754,15 +1754,14 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
             <div className="min-w-0">
               <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-xl bg-slate-50 px-2.5 py-1.5 text-[11px] font-black text-slate-700">출동기사 · {job.worker || "미배정"}</span>
-                <button type="button" onClick={()=>beginWorkerChange(job)} className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-700">기사변경</button>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
                 <b className="block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
                 <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>
               </div>
             </div>
-            <span className="shrink-0 rounded-full bg-blue-600 px-3 py-1.5 text-[11px] font-black text-white shadow-sm">{step === "접수" ? "출동" : step}</span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button type="button" onClick={()=>beginWorkerChange(job)} className="max-w-[150px] truncate rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-700 shadow-sm" title="출동기사 변경">출동기사 · {job.worker || "미배정"}</button>
+              <span className="shrink-0 rounded-full bg-blue-600 px-3 py-1.5 text-[11px] font-black text-white shadow-sm">{step === "접수" ? "출동" : step}</span>
+            </div>
           </div>
           <div className="mt-3 grid grid-cols-[1fr_112px] gap-3">
             <button type="button" onClick={()=>open(job)} className="min-w-0 text-left">
