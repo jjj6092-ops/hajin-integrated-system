@@ -45,10 +45,8 @@ export default function GlobalUiPatches() {
     const handleLogoClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-
       const logo = target.closest('img[src*="hajin-emblem-transparent.png"]');
       if (!logo) return;
-
       event.preventDefault();
       window.location.assign("/");
     };
@@ -62,48 +60,63 @@ export default function GlobalUiPatches() {
       });
     };
 
-    let lastSnapshot = document.body.innerText;
-    let internalDepth = 0;
+    // The app changes screens with React state instead of URL routes.
+    // Keep a real stack of the in-app back buttons that existed before each screen change.
+    const navigationStack: Array<() => void> = [];
+    let pendingBackAction: (() => void) | null = null;
+    let beforeClickSnapshot = document.body.innerText;
     let restoring = false;
 
-    const recordInternalNavigation = () => {
-      if (restoring) return;
-      const nextSnapshot = document.body.innerText;
-      if (nextSnapshot === lastSnapshot) return;
-      lastSnapshot = nextSnapshot;
-      internalDepth += 1;
-      window.history.pushState({ hajinInternal: true, depth: internalDepth }, "", window.location.href);
-    };
-
-    const handleBack = () => {
-      if (internalDepth > 0) {
-        restoring = true;
-        internalDepth -= 1;
-        window.setTimeout(() => {
-          const backButtons = Array.from(document.querySelectorAll("button")).filter((button) => {
-            const text = button.textContent?.trim() || "";
-            const aria = button.getAttribute("aria-label") || "";
-            return text === "뒤로" || aria.includes("뒤로") || button.querySelector('svg.lucide-chevron-left');
-          });
-          const backButton = backButtons[0] as HTMLButtonElement | undefined;
-          if (backButton) backButton.click();
-          else window.location.assign("/");
-          lastSnapshot = document.body.innerText;
-          restoring = false;
-        }, 0);
-      }
+    const findVisibleBackButton = () => {
+      return Array.from(document.querySelectorAll("button")).find((button) => {
+        const text = button.textContent?.trim() || "";
+        const aria = button.getAttribute("aria-label") || "";
+        const isBack = text === "뒤로" || aria.includes("뒤로") || Boolean(button.querySelector("svg.lucide-chevron-left"));
+        if (!isBack) return false;
+        const rect = button.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      }) as HTMLButtonElement | undefined;
     };
 
     const handleDocumentClick = (event: MouseEvent) => {
+      if (restoring) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
       if (target.closest('img[src*="hajin-emblem-transparent.png"]')) return;
+
       const button = target.closest("button");
       if (!button) return;
       const text = button.textContent?.trim() || "";
       const aria = button.getAttribute("aria-label") || "";
-      if (text === "뒤로" || aria.includes("뒤로") || button.querySelector('svg.lucide-chevron-left')) return;
-      window.setTimeout(recordInternalNavigation, 50);
+      if (text === "뒤로" || aria.includes("뒤로") || button.querySelector("svg.lucide-chevron-left")) return;
+
+      beforeClickSnapshot = document.body.innerText;
+      const currentBack = findVisibleBackButton();
+      pendingBackAction = currentBack ? () => currentBack.click() : () => window.location.assign("/");
+
+      window.setTimeout(() => {
+        if (restoring || !pendingBackAction) return;
+        const changed = document.body.innerText !== beforeClickSnapshot;
+        if (!changed) {
+          pendingBackAction = null;
+          return;
+        }
+        navigationStack.push(pendingBackAction);
+        pendingBackAction = null;
+        window.history.pushState({ hajinInternal: true, depth: navigationStack.length }, "", window.location.href);
+      }, 80);
+    };
+
+    const handleBack = () => {
+      const action = navigationStack.pop();
+      if (!action) return;
+      restoring = true;
+      window.setTimeout(() => {
+        action();
+        window.setTimeout(() => {
+          restoring = false;
+        }, 100);
+      }, 0);
     };
 
     const applyAll = () => {
