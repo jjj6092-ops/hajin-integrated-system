@@ -1711,9 +1711,15 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
   const saveQuickSchedule=async()=>{
     if(!scheduleJob || !scheduleDate) return;
     setSavingSchedule(true);
-    const {error}=await supabase.from("as_jobs").update({visit_note:joinVisitMeta(scheduleDate,scheduleTime,scheduleJob.requiredEquipment,scheduleJob.specialNotes)}).eq("id",scheduleJob.dbId);
+    const {error}=await supabase.from("as_jobs")
+      .update({visit_note:joinVisitMeta(scheduleDate,scheduleTime,scheduleJob.requiredEquipment,scheduleJob.specialNotes)})
+      .eq("id",scheduleJob.dbId)
+      .select("id")
+      .single();
     setSavingSchedule(false);
     if(error){ window.alert("일정 변경에 실패했습니다."); return; }
+    // 일정은 단계별 별도 값이 아니라 A/S 접수 원본 1건에 저장한다.
+    // 따라서 접수 → 출동 → 작업완료 → 정산완료로 이동해도 변경된 날짜/시간을 그대로 사용한다.
     setScheduleJob(null);
     await refreshJobs();
   };
@@ -1732,9 +1738,15 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
     const names=[worker1.trim(),worker2.trim()].filter(Boolean).slice(0,2);
     if(!names.length){ window.alert("출동기사를 1명 이상 입력해주세요."); return; }
     setSavingWorker(true);
-    const {error}=await supabase.from("as_jobs").update({worker:names.join(" / ")}).eq("id",workerJob.dbId);
+    const {error}=await supabase.from("as_jobs")
+      .update({worker:names.join(" / ")})
+      .eq("id",workerJob.dbId)
+      .select("id")
+      .single();
     setSavingWorker(false);
     if(error){ window.alert("출동기사 변경에 실패했습니다."); return; }
+    // 출동기사 역시 단계별 복사본을 만들지 않고 A/S 접수 원본 1건을 갱신한다.
+    // 이후 출동/작업완료/정산완료 화면은 이 최신 기사 정보를 공통으로 표시한다.
     setWorkerJob(null);
     await refreshJobs();
   };
@@ -1751,17 +1763,15 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
         return <div key={String(job.dbId||job.id)} className="relative w-full overflow-hidden rounded-2xl bg-white p-4 pl-5 text-left shadow-sm">
           <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`}></span>
           <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <b className="block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
-                <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
+            <span className={`inline-flex shrink-0 rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5">
               <button type="button" onClick={()=>beginWorkerChange(job)} className="max-w-[150px] truncate rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-black text-slate-700 shadow-sm" title="출동기사 변경">출동기사 · {job.worker || "미배정"}</button>
-              <span className="shrink-0 rounded-full bg-blue-600 px-3 py-1.5 text-[11px] font-black text-white shadow-sm">{step === "접수" ? "출동" : step}</span>
+              <span className="shrink-0 rounded-full bg-blue-600 px-3 py-1.5 text-[11px] font-black text-white shadow-sm">{step === "접수" ? "출동" : step === "출동" ? "작업완료" : step === "작업완료" ? "정산완료" : "정산완료"}</span>
             </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2 whitespace-nowrap">
+            <b className="min-w-0 text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
+            <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>
           </div>
           <div className="mt-3 grid grid-cols-[1fr_112px] gap-3">
             <button type="button" onClick={()=>open(job)} className="min-w-0 text-left">
