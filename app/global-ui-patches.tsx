@@ -62,18 +62,66 @@ export default function GlobalUiPatches() {
       });
     };
 
+    let lastSnapshot = document.body.innerText;
+    let internalDepth = 0;
+    let restoring = false;
+
+    const recordInternalNavigation = () => {
+      if (restoring) return;
+      const nextSnapshot = document.body.innerText;
+      if (nextSnapshot === lastSnapshot) return;
+      lastSnapshot = nextSnapshot;
+      internalDepth += 1;
+      window.history.pushState({ hajinInternal: true, depth: internalDepth }, "", window.location.href);
+    };
+
+    const handleBack = () => {
+      if (internalDepth > 0) {
+        restoring = true;
+        internalDepth -= 1;
+        window.setTimeout(() => {
+          const backButtons = Array.from(document.querySelectorAll("button")).filter((button) => {
+            const text = button.textContent?.trim() || "";
+            const aria = button.getAttribute("aria-label") || "";
+            return text === "뒤로" || aria.includes("뒤로") || button.querySelector('svg.lucide-chevron-left');
+          });
+          const backButton = backButtons[0] as HTMLButtonElement | undefined;
+          if (backButton) backButton.click();
+          else window.location.assign("/");
+          lastSnapshot = document.body.innerText;
+          restoring = false;
+        }, 0);
+      }
+    };
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest('img[src*="hajin-emblem-transparent.png"]')) return;
+      const button = target.closest("button");
+      if (!button) return;
+      const text = button.textContent?.trim() || "";
+      const aria = button.getAttribute("aria-label") || "";
+      if (text === "뒤로" || aria.includes("뒤로") || button.querySelector('svg.lucide-chevron-left')) return;
+      window.setTimeout(recordInternalNavigation, 50);
+    };
+
     const applyAll = () => {
       applyWorkflowLabelsAndIcons();
       markLogosClickable();
     };
 
     document.addEventListener("click", handleLogoClick, true);
+    document.addEventListener("click", handleDocumentClick, true);
+    window.addEventListener("popstate", handleBack);
     const observer = new MutationObserver(applyAll);
     observer.observe(document.body, { childList: true, subtree: true });
     applyAll();
 
     return () => {
       document.removeEventListener("click", handleLogoClick, true);
+      document.removeEventListener("click", handleDocumentClick, true);
+      window.removeEventListener("popstate", handleBack);
       observer.disconnect();
     };
   }, []);
