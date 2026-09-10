@@ -1546,79 +1546,62 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
   const [intakeGalleryCount,setIntakeGalleryCount]=useState(0);
   const intakePhotoCount=intakeCameraCount+intakeGalleryCount;
   return (
-    <form action={add} className="mt-5 space-y-4">
-      <Box t="고객 정보">
-        <label className="block text-sm font-bold">
-          고객사 *
-          <select value={companyChoice} onChange={(e)=>setCompanyChoice(e.target.value)} className="input appearance-none">
-            <option value="">고객사를 선택하세요</option>
-            <option value="하진">하진</option>
-            <option value="렉스코">렉스코</option>
-            <option value="디랙스">디랙스</option>
-            <option value="기타">기타</option>
-          </select>
-          <input type="hidden" name="company" value={companyChoice==="기타"?otherCompany:companyChoice}/>
-        </label>
-        {companyChoice==="기타"&&<label className="block text-sm font-bold">기타 고객사 *<input value={otherCompany} onChange={(e)=>setOtherCompany(e.target.value)} placeholder="고객사명을 입력하세요" className="input"/></label>}
-        <Field n="site" l="현장 위치" p="예: 한강센트럴자이 커뮤니티센터 2층" />
-        <div className="grid grid-cols-2 gap-3">
-          <Field n="manager" l="담당자 이름" p="예: 홍길동" />
-          <Field n="phone" l="담당자 연락처" p="010-0000-0000" />
+    <form action={add} className="mt-5">
+      <section className="rounded-3xl bg-white p-4 shadow-sm">
+        <div className="mb-4">
+          <p className="text-sm font-black text-slate-500">신규 접수</p>
+          <h2 className="mt-1 text-xl font-black">A/S 접수 등록</h2>
         </div>
-      </Box>
-      <Box t="장비 및 증상">
-        <Field n="machine" l="장비명 / 모델" p="예: DRAX 런닝머신" />
-        <label className="block text-sm font-bold">
-          고장 증상 *
-          <textarea
-            name="issue"
-            rows={4}
-            placeholder="증상을 자세히 적어주세요"
-            className="input resize-none"
-          />
-        </label>
-      </Box>
-      <Box t="방문 일정">
-        <label className="block text-sm font-bold">방문 날짜 *<input name="date" type="date" defaultValue={koreaDateKey()} className="input" required/></label>
-        <label className="block text-sm font-bold">
-          방문 시간 *
-          <select name="time" defaultValue="" className="input appearance-none" required>
-            <option value="" disabled>시간을 선택하세요</option>
-            {Array.from({length:13},(_,index)=>index+8).map(hour=><option key={hour} value={`${String(hour).padStart(2,"0")}:00`}>{String(hour).padStart(2,"0")}시</option>)}
-          </select>
-        </label>
-        <Field n="worker" l="출동기사" p="예: 우제일" />
-      </Box>
-      <Box t="출동 준비 및 전달사항">
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-bold">필요장비 / 부품<textarea name="requiredEquipment" rows={3} placeholder="예: 러닝벨트, 육각렌치" className="input resize-none" /></label>
-          <label className="block text-sm font-bold">전달 및 특이사항<textarea name="specialNotes" rows={3} placeholder="출입방법, 주차, 고객 요청사항 등" className="input resize-none" /></label>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-bold">
+              고객사 *
+              <select value={companyChoice} onChange={(e)=>setCompanyChoice(e.target.value)} className="input appearance-none" required>
+                <option value="">고객사 선택</option>
+                <option value="하진">하진</option>
+                <option value="렉스코">렉스코</option>
+                <option value="디랙스">디랙스</option>
+                <option value="기타">기타</option>
+              </select>
+              <input type="hidden" name="company" value={companyChoice==="기타"?otherCompany:companyChoice}/>
+            </label>
+            <Field n="worker" l="출동기사" p="기사명" />
+          </div>
+          {companyChoice==="기타"&&<label className="block text-sm font-bold">기타 고객사 *<input value={otherCompany} onChange={(e)=>setOtherCompany(e.target.value)} placeholder="고객사명을 입력하세요" className="input" required/></label>}
+          <Field n="site" l="출동장소" p="현장 위치" />
+          <div className="grid grid-cols-2 gap-3">
+            <Field n="manager" l="담당자 이름" p="담당자명" />
+            <Field n="phone" l="담당자 연락처" p="010-0000-0000" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-bold">출동 날짜 *<input name="date" type="date" defaultValue={koreaDateKey()} className="input" required/></label>
+            <label className="text-sm font-bold">출동 시간 *<select name="time" defaultValue="" className="input appearance-none" required><option value="" disabled>시간 선택</option>{Array.from({length:13},(_,index)=>index+8).map(hour=><option key={hour} value={`${String(hour).padStart(2,"0")}:00`}>{hour}시</option>)}</select></label>
+          </div>
+          <Field n="machine" l="장비명 / 모델" p="예: DRAX 런닝머신" />
+          <label className="block text-sm font-bold">고장원인 *<textarea name="issue" rows={3} placeholder="접수된 고장 증상" className="input resize-none" required/></label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm font-bold">필요장비 / 부품<textarea name="requiredEquipment" rows={4} placeholder="현장에서 필요한 장비·부품" className="input resize-none" /></label>
+            <label className="block text-sm font-bold">전달 및 특이사항<textarea name="specialNotes" rows={4} placeholder="출입방법·주차·고객 요청사항" className="input resize-none" /></label>
+          </div>
+          <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <b className="text-sm text-blue-800">접수사진 추가</b>
+                <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotoCount ? `총 ${intakePhotoCount}장 선택됨` : "필요할 때만 추가"}</p>
+              </div>
+              <div className="flex gap-2">
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" name="intake_photos" accept="image/*" capture="environment" className="sr-only" onChange={(event)=>setIntakeCameraCount(event.target.files?.length ?? 0)}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" name="intake_photos" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple className="sr-only" onClick={(event)=>{event.currentTarget.value=""}} onChange={(event)=>setIntakeGalleryCount(event.target.files?.length ?? 0)}/></label>
+              </div>
+            </div>
+          </div>
+          <button className="w-full rounded-2xl bg-[#1855a6] py-3.5 text-sm font-black text-white shadow-md">A/S 접수 등록</button>
         </div>
-      </Box>
-      <Box t="접수사진">
-        <p className="text-sm leading-6 text-slate-500">카메라로 바로 촬영하거나 휴대폰 갤러리에서 기존 사진을 여러 장 선택할 수 있습니다.</p>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex min-h-[92px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50 p-3 text-blue-700 transition active:scale-[0.99]">
-            <Camera size={24}/>
-            <b className="mt-2 text-sm">카메라 촬영</b>
-            <span className="mt-1 text-xs font-bold text-blue-500">{intakeCameraCount?`${intakeCameraCount}장`:'바로 촬영'}</span>
-            <input type="file" name="intake_photos" accept="image/*" capture="environment" className="sr-only" onChange={(event)=>setIntakeCameraCount(event.target.files?.length ?? 0)}/>
-          </label>
-          <label className="flex min-h-[92px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50 p-3 text-emerald-700 transition active:scale-[0.99]">
-            <ImageIcon size={24}/>
-            <b className="mt-2 text-sm">갤러리 선택</b>
-            <span className="mt-1 text-xs font-bold text-emerald-600">{intakeGalleryCount?`${intakeGalleryCount}장`:'여러 장 선택'}</span>
-            <input type="file" name="intake_photos" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple className="sr-only" onClick={(event)=>{event.currentTarget.value=""}} onChange={(event)=>setIntakeGalleryCount(event.target.files?.length ?? 0)}/>
-          </label>
-        </div>
-        {intakePhotoCount>0&&<p className="text-xs font-bold text-slate-500">총 {intakePhotoCount}장 선택됨</p>}
-      </Box>
-      <button className="w-full rounded-2xl bg-[#1855a6] py-4 font-black text-white shadow-lg">
-        A/S 접수 등록
-      </button>
+      </section>
     </form>
   );
 }
+
 function Box({ t, children }: { t: string; children: React.ReactNode }) {
   return (
     <section className="space-y-4 rounded-3xl bg-white p-5 shadow-sm">
