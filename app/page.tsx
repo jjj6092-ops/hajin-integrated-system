@@ -64,6 +64,8 @@ type Job = {
   worker: string;
   status: Status;
   resolution: string;
+  requiredEquipment: string;
+  specialNotes: string;
   createdAt: string;
 };
 type BusinessDocument = {
@@ -199,12 +201,35 @@ const companyAccent = (company: string) => {
   return { bar: "bg-slate-400", tag: "bg-slate-100 text-slate-700" };
 };
 
+const VISIT_META_SEPARATOR = "|||HAJIN_META|||";
+const splitVisitMeta = (value: string) => {
+  const raw = String(value || "");
+  const [schedule, encoded] = raw.split(VISIT_META_SEPARATOR);
+  if (!encoded) return { schedule: schedule.trim(), requiredEquipment: "", specialNotes: "" };
+  try {
+    const parsed = JSON.parse(decodeURIComponent(encoded));
+    return {
+      schedule: schedule.trim(),
+      requiredEquipment: String(parsed?.requiredEquipment || ""),
+      specialNotes: String(parsed?.specialNotes || ""),
+    };
+  } catch {
+    return { schedule: schedule.trim(), requiredEquipment: "", specialNotes: "" };
+  }
+};
+const joinVisitMeta = (date: string, time: string, requiredEquipment = "", specialNotes = "") => {
+  const schedule = [date.trim(), time.trim()].filter(Boolean).join(" ");
+  const meta = encodeURIComponent(JSON.stringify({ requiredEquipment: requiredEquipment.trim(), specialNotes: specialNotes.trim() }));
+  return `${schedule}${VISIT_META_SEPARATOR}${meta}`;
+};
+
 const toJob = (r: JobRow): Job => {
   const d = new Date(r.created_at);
   const y = String(d.getFullYear()).slice(-2),
     m = String(d.getMonth() + 1).padStart(2, "0"),
     day = String(d.getDate()).padStart(2, "0");
   const contact = splitContact(r.contact_phone);
+  const visit = splitVisitMeta(r.visit_note);
   return {
     dbId: r.id,
     id: `AS-${y}${m}${day}-${String(r.id).padStart(3, "0")}`,
@@ -214,10 +239,12 @@ const toJob = (r: JobRow): Job => {
     phone: contact.phone,
     machine: r.machine,
     issue: r.issue,
-    date: r.visit_note,
+    date: visit.schedule,
     worker: r.worker,
     status: r.status,
     resolution: r.resolution,
+    requiredEquipment: visit.requiredEquipment,
+    specialNotes: visit.specialNotes,
     createdAt: r.created_at,
   };
 };
@@ -554,10 +581,12 @@ export default function Page() {
         String(f.get("phone") || "").trim(),
       ),
       machine: String(f.get("machine") || "").trim(),
-      visit_note: [
+      visit_note: joinVisitMeta(
         String(f.get("date") || "").trim(),
         String(f.get("time") || "").trim(),
-      ].filter(Boolean).join(" "),
+        String(f.get("requiredEquipment") || "").trim(),
+        String(f.get("specialNotes") || "").trim(),
+      ),
       worker: String(f.get("worker") || "").trim(),
       status: "접수" as Status,
       created_by: user.id,
@@ -637,7 +666,7 @@ export default function Page() {
     if (!user || !selected) return;
     const { data, error } = await supabase
       .from("as_jobs")
-      .update({ site: site.trim(), visit_note: [date, time].filter(Boolean).join(" "), updated_by: user.id })
+      .update({ site: site.trim(), visit_note: joinVisitMeta(date, time, selected.requiredEquipment, selected.specialNotes), updated_by: user.id })
       .eq("id", selected.dbId)
       .select("id,company,site,contact_phone,machine,issue,visit_note,worker,status,resolution,created_at")
       .single();
@@ -647,6 +676,45 @@ export default function Page() {
     setJobs((current) => current.map((job) => job.dbId === next.dbId ? next : job));
     say("방문 일정과 현장 위치를 수정했습니다");
   };
+  const saveJob = async (values: {company:string;site:string;manager:string;phone:string;machine:string;issue:string;date:string;time:string;worker:string;requiredEquipment:string;specialNotes:string;}) => {
+    if (!user || !selected) return null;
+    const payload = {
+      company: values.company.trim(),
+      site: values.site.trim(),
+      contact_phone: joinContact(values.manager, values.phone),
+      machine: values.machine.trim(),
+      issue: values.issue.trim(),
+      visit_note: joinVisitMeta(values.date, values.time, values.requiredEquipment, values.specialNotes),
+      worker: values.worker.trim(),
+      updated_by: user.id,
+    };
+    if (!payload.company || !payload.issue) { say("고객사와 고장원인을 입력해주세요"); return null; }
+    const { data, error } = await supabase.from("as_jobs").update(payload).eq("id", selected.dbId).select("id,company,site,contact_phone,machine,issue,visit_note,worker,status,resolution,created_at").single();
+    if (error) { say("접수 내용을 수정하지 못했습니다"); return null; }
+    const next = toJob(data as JobRow);
+    setSelected(next);
+    setJobs(current => current.map(job => job.dbId === next.dbId ? next : job));
+    say("접수 내용을 수정했습니다");
+    return next;
+  };
+  const deleteJob = async () => {
+    if (!user || !selected) return false;
+    if (typeof window !== "undefined" && !window.confirm("이 A/S 접수건을 삭제할까요? 삭제 후에는 되돌릴 수 없습니다.")) return false;
+    const { error } = await supabase.from("as_jobs").delete().eq("id", selected.dbId);
+    if (error) { say("접수건을 삭제하지 못했습니다"); return false; }
+    try {
+      const all=JSON.parse(localStorage.getItem(WORKFLOW_KEY)||"{}");
+      delete all[String(selected.dbId)];
+      localStorage.setItem(WORKFLOW_KEY,JSON.stringify(all));
+    } catch {}
+    setJobs(current => current.filter(job => job.dbId !== selected.dbId));
+    setSelected(null);
+    viewRef.current = "home";
+    setView("home");
+    say("접수건을 삭제했습니다");
+    return true;
+  };
+
   const uploadJobPhotos = async (category: string, files: File[]) => {
     if (!user || !selected || !files.length) return;
     for (const [index,file] of files.entries()) {
@@ -778,6 +846,8 @@ export default function Page() {
               update={updateStatus}
               save={saveResolution}
               saveSchedule={saveSchedule}
+              saveJob={saveJob}
+              deleteJob={deleteJob}
               uploadPhotos={uploadJobPhotos}
               openEstimate={() => navigate("estimate")}
               openTransaction={() => navigate("transaction")}
@@ -1504,6 +1574,12 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
         </label>
         <Field n="worker" l="출동기사" p="예: 우제일" />
       </Box>
+      <Box t="출동 준비 및 전달사항">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-bold">필요장비 / 부품<textarea name="requiredEquipment" rows={3} placeholder="예: 러닝벨트, 육각렌치" className="input resize-none" /></label>
+          <label className="block text-sm font-bold">전달 및 특이사항<textarea name="specialNotes" rows={3} placeholder="출입방법, 주차, 고객 요청사항 등" className="input resize-none" /></label>
+        </div>
+      </Box>
       <Box t="접수사진">
         <p className="text-sm leading-6 text-slate-500">카메라로 바로 촬영하거나 휴대폰 갤러리에서 기존 사진을 여러 장 선택할 수 있습니다.</p>
         <div className="grid grid-cols-2 gap-3">
@@ -1568,12 +1644,16 @@ function WorkflowStageJobs({ jobs, step, open, close }: { jobs: Job[]; step: Wor
               <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
               <b className="mt-2 block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
             </div>
-            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step}</span>
+            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step === "접수" ? "출동" : step}</span>
           </div>
           <div className="mt-3 space-y-1.5 text-sm">
             <p><span className="font-black text-slate-500">출동장소</span> · <b>{job.site || "미입력"}</b></p>
             <p><span className="font-black text-slate-500">고장원인</span> · <b>{job.issue || "미입력"}</b></p>
             <p><span className="font-black text-slate-500">담당자</span> · <b>{job.manager || "미입력"}</b>{job.phone ? ` · ${job.phone}` : ""}</p>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div className="min-h-[54px] rounded-xl bg-slate-50 p-2.5"><span className="block font-black text-slate-500">필요장비</span><b className="mt-1 block break-words">{job.requiredEquipment || "미입력"}</b></div>
+            <div className="min-h-[54px] rounded-xl bg-slate-50 p-2.5"><span className="block font-black text-slate-500">전달 및 특이사항</span><b className="mt-1 block break-words">{job.specialNotes || "미입력"}</b></div>
           </div>
         </button>;
       })}
@@ -1722,6 +1802,8 @@ function Detail({
   update,
   save,
   saveSchedule,
+  saveJob,
+  deleteJob,
   uploadPhotos,
   openEstimate,
   openTransaction,
@@ -1730,25 +1812,57 @@ function Detail({
   update: (s: Status) => Promise<void>;
   save: (v: string) => Promise<void>;
   saveSchedule: (site:string,date:string,time:string) => Promise<void>;
+  saveJob: (values:{company:string;site:string;manager:string;phone:string;machine:string;issue:string;date:string;time:string;worker:string;requiredEquipment:string;specialNotes:string;}) => Promise<Job | null>;
+  deleteJob: () => Promise<boolean>;
   uploadPhotos: (category:string,files:File[]) => Promise<void>;
   openEstimate: () => void;
   openTransaction: () => void;
 }) {
+  const schedule = scheduleOf(job.date || "");
+  const [edit,setEdit]=useState({
+    company:job.company,site:job.site,manager:job.manager,phone:job.phone,machine:job.machine,issue:job.issue,
+    date:schedule.dateKey || koreaDateKey(),time:/^\d{1,2}:\d{2}$/.test(schedule.time)?schedule.time:"",worker:job.worker,
+    requiredEquipment:job.requiredEquipment || "",specialNotes:job.specialNotes || "",
+  });
   const [value, setValue] = useState(job.resolution);
   const [photos,setPhotos]=useState<Record<string,File[]>>({});
+  const [intakePhotos,setIntakePhotos]=useState<File[]>([]);
   const [workflow,setWorkflow]=useState<JobWorkflow>(()=>readWorkflow(job.dbId));
   const [finishing,setFinishing]=useState(false);
+  const [savingEdit,setSavingEdit]=useState(false);
   const saveWorkflow=(patch:Partial<JobWorkflow>)=>{
     const next={...workflow,...patch};
     setWorkflow(next); writeWorkflow(job.dbId,next);
   };
   useEffect(() => {
+    const nextSchedule=scheduleOf(job.date || "");
+    setEdit({company:job.company,site:job.site,manager:job.manager,phone:job.phone,machine:job.machine,issue:job.issue,date:nextSchedule.dateKey||koreaDateKey(),time:/^\d{1,2}:\d{2}$/.test(nextSchedule.time)?nextSchedule.time:"",worker:job.worker,requiredEquipment:job.requiredEquipment||"",specialNotes:job.specialNotes||""});
     setValue(job.resolution);
     setPhotos({});
+    setIntakePhotos([]);
     setWorkflow(readWorkflow(job.dbId));
-  }, [job.dbId, job.resolution]);
+  }, [job.dbId, job.resolution, job.company, job.site, job.manager, job.phone, job.machine, job.issue, job.date, job.worker, job.requiredEquipment, job.specialNotes]);
 
+  const setField=(key:keyof typeof edit,value:string)=>setEdit(current=>({...current,[key]:value}));
   const appendFiles=(category:string,files:File[])=>setPhotos(current=>({...current,[category]:[...(current[category]||[]),...files]}));
+  const saveEdits=async()=>{
+    if(savingEdit) return null;
+    setSavingEdit(true);
+    try{
+      const next=await saveJob(edit);
+      if(next && intakePhotos.length){
+        await uploadPhotos("접수사진",intakePhotos);
+        setIntakePhotos([]);
+      }
+      return next;
+    } finally { setSavingEdit(false); }
+  };
+  const moveToDispatch=async()=>{
+    const next=await saveEdits();
+    if(!next) return;
+    await update("방문예정");
+    saveWorkflow({step:"출동"});
+  };
   const finishWork=async()=>{
     if(finishing) return;
     setFinishing(true);
@@ -1766,19 +1880,48 @@ function Detail({
 
   return (
     <div className="mt-5 space-y-4">
-      <section className="rounded-3xl bg-[#1855a6] p-5 text-white">
-        <div className="flex justify-between text-xs"><span>{job.id}</span><b>{job.status}</b></div>
-        <h2 className="mt-3 text-xl font-black">{job.company}</h2>
-        <p className="text-sm text-blue-100">{job.site || "현장 미정"}</p>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-blue-50">
-          <span>방문 · {job.date || "일정 미정"}</span><span>기사 · {job.worker || "미배정"}</span>
-          <span>담당자 · {job.manager || "미입력"}</span><span>연락처 · {job.phone || "미입력"}</span>
-          <span className="col-span-2">고장원인 · {job.issue || "미입력"}</span>
+      <section className="rounded-3xl bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-slate-400">{job.id}</p>
+            <h2 className="mt-1 text-xl font-black">A/S 접수 수정</h2>
+          </div>
+          {workflow.step === "접수" ? (
+            <button type="button" onClick={()=>void moveToDispatch()} disabled={savingEdit} className="shrink-0 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm disabled:bg-slate-300">출동</button>
+          ) : (
+            <span className="shrink-0 rounded-full bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">{workflow.step}</span>
+          )}
+        </div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-bold">고객사<input value={edit.company} onChange={e=>setField("company",e.target.value)} className="input" placeholder="하진 / 렉스코 / 디랙스 / 기타" /></label>
+            <label className="text-sm font-bold">출동기사<input value={edit.worker} onChange={e=>setField("worker",e.target.value)} className="input" placeholder="기사명" /></label>
+          </div>
+          <label className="block text-sm font-bold">출동장소<input value={edit.site} onChange={e=>setField("site",e.target.value)} className="input" placeholder="현장 위치" /></label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-bold">담당자 이름<input value={edit.manager} onChange={e=>setField("manager",e.target.value)} className="input" placeholder="담당자명" /></label>
+            <label className="text-sm font-bold">담당자 연락처<input value={edit.phone} onChange={e=>setField("phone",e.target.value)} className="input" placeholder="010-0000-0000" /></label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-sm font-bold">출동 날짜<input type="date" value={edit.date} onChange={e=>setField("date",e.target.value)} className="input" /></label>
+            <label className="text-sm font-bold">출동 시간<select value={edit.time} onChange={e=>setField("time",e.target.value)} className="input appearance-none"><option value="">시간 선택</option>{Array.from({length:13},(_,index)=>index+8).map(hour=><option key={hour} value={`${String(hour).padStart(2,"0")}:00`}>{hour}시</option>)}</select></label>
+          </div>
+          <label className="block text-sm font-bold">장비명 / 모델<input value={edit.machine} onChange={e=>setField("machine",e.target.value)} className="input" placeholder="예: DRAX 런닝머신" /></label>
+          <label className="block text-sm font-bold">고장원인<textarea value={edit.issue} onChange={e=>setField("issue",e.target.value)} rows={3} className="input resize-none" placeholder="접수된 고장 증상" /></label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm font-bold">필요장비 / 부품<textarea value={edit.requiredEquipment} onChange={e=>setField("requiredEquipment",e.target.value)} rows={4} className="input resize-none" placeholder="현장에서 필요한 장비·부품" /></label>
+            <label className="block text-sm font-bold">전달 및 특이사항<textarea value={edit.specialNotes} onChange={e=>setField("specialNotes",e.target.value)} rows={4} className="input resize-none" placeholder="출입방법·주차·고객 요청사항" /></label>
+          </div>
+          <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-3">
+            <div className="flex items-center justify-between gap-3"><div><b className="text-sm text-blue-800">접수사진 추가</b><p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `${intakePhotos.length}장 선택됨` : "필요할 때만 추가"}</p></div><label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onClick={e=>{e.currentTarget.value=""}} onChange={e=>setIntakePhotos(Array.from(e.target.files||[]))}/></label></div>
+          </div>
+          <button type="button" onClick={()=>void saveEdits()} disabled={savingEdit} className="w-full rounded-2xl bg-slate-900 py-3.5 text-sm font-black text-white disabled:bg-slate-300">{savingEdit?"저장 중...":"수정 내용 저장"}</button>
+          <button type="button" onClick={()=>void deleteJob()} className="w-full rounded-2xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">접수건 삭제</button>
         </div>
       </section>
 
-      <Box t="현장 작업 처리">
-        <p className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800">현장직은 이 화면에서 작업내용과 사진만 남기고 마지막에 작업완료를 한 번 누르면 됩니다.</p>
+      {workflow.step !== "접수" && <Box t="현장 작업 처리">
+        <p className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-800">현장직은 작업내용과 사진만 남기고 마지막에 작업완료를 한 번 누르면 됩니다.</p>
         <textarea value={value} onChange={(e)=>setValue(e.target.value)} rows={4} placeholder="고장 원인 · 조치 내용 · 교체 부품을 간단히 입력하세요" className="input resize-none" />
         <div className="grid grid-cols-2 gap-3">
           {["작업 전","작업 후"].map((category,index)=>{
@@ -1795,7 +1938,7 @@ function Detail({
         </div>
         <button type="button" disabled={finishing} onClick={()=>void finishWork()} className="w-full rounded-2xl bg-emerald-600 py-4 text-base font-black text-white shadow-sm disabled:bg-slate-300">{finishing?"저장 중...":"작업완료"}</button>
         <button type="button" onClick={()=>{void save(value); void update("재방문"); saveWorkflow({step:"출동"});}} className="w-full rounded-xl border border-slate-200 py-3 text-sm font-black text-slate-600">재방문 필요</button>
-      </Box>
+      </Box>}
 
       <details className="rounded-3xl bg-white p-4 shadow-sm">
         <summary className="cursor-pointer list-none text-sm font-black text-slate-700">사무직 지원 · 견적 / 입금 / 거래명세서 <span className="float-right text-slate-400">열기</span></summary>
