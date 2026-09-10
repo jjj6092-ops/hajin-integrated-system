@@ -634,6 +634,13 @@ export default function Page() {
         return;
       }
       uploadedPaths.push(path);
+      const {data:verifySigned,error:verifyError}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60);
+      if(verifyError || !verifySigned?.signedUrl){
+        await supabase.storage.from("as-job-photos").remove(uploadedPaths);
+        await supabase.from("as_jobs").delete().eq("id",j.dbId);
+        say(`사진은 업로드됐지만 조회 권한 확인에 실패했습니다: ${verifyError?.message||"SELECT 정책을 확인해주세요"}`);
+        return;
+      }
     }
     setJobs((x) => [j, ...x]);
     setSelected(j);
@@ -748,6 +755,12 @@ export default function Page() {
         return false;
       }
       uploadedPaths.push(path);
+      const {data:verifySigned,error:verifyError}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60);
+      if(verifyError || !verifySigned?.signedUrl){
+        await supabase.storage.from("as-job-photos").remove(uploadedPaths);
+        say(`사진 조회 권한 확인에 실패했습니다: ${verifyError?.message||"SELECT 정책을 확인해주세요"}`);
+        return false;
+      }
     }
     return true;
   };
@@ -1678,6 +1691,7 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
   const [worker2,setWorker2]=useState("");
   const [savingWorker,setSavingWorker]=useState(false);
   const [photoMap,setPhotoMap]=useState<Record<string,{name:string;url:string}[]>>({});
+  const [photoErrorMap,setPhotoErrorMap]=useState<Record<string,string>>({});
   const descriptions: Record<WorkflowStep,string> = {
     "접수":"접수 후 일정·견적을 확인할 업무",
     "출동":"일정이 잡혀 준비·출동·현장 작업 중인 업무",
@@ -1690,16 +1704,21 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
       const entries=await Promise.all(visible.map(async(job)=>{
         const folder=`${job.dbId}/접수사진`;
         const {data,error}=await supabase.storage.from("as-job-photos").list(folder,{limit:30,sortBy:{column:"created_at",order:"asc"}});
-        if(error) return [String(job.dbId),[]] as const;
+        if(error) return [String(job.dbId),[],`사진 조회 실패: ${error.message}`] as const;
         const files=(data||[]).filter(item=>item.name && item.name!==".emptyFolderPlaceholder");
-        const photos=(await Promise.all(files.map(async item=>{
+        const signedResults=await Promise.all(files.map(async item=>{
           const path=`${folder}/${item.name}`;
-          const {data:signed}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
-          return signed?.signedUrl?{name:item.name,url:signed.signedUrl}:null;
-        }))).filter((x): x is {name:string;url:string}=>Boolean(x));
-        return [String(job.dbId),photos] as const;
+          const {data:signed,error:signedError}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
+          return {item,signed,signedError};
+        }));
+        const photos=signedResults.filter(r=>r.signed?.signedUrl).map(r=>({name:r.item.name,url:r.signed!.signedUrl}));
+        const signedFailure=signedResults.find(r=>r.signedError);
+        return [String(job.dbId),photos,signedFailure?`사진 주소 생성 실패: ${signedFailure.signedError?.message||"권한을 확인해주세요"}`:""] as const;
       }));
-      if(!cancelled) setPhotoMap(Object.fromEntries(entries));
+      if(!cancelled){
+        setPhotoMap(Object.fromEntries(entries.map(([id,photos])=>[id,photos])));
+        setPhotoErrorMap(Object.fromEntries(entries.map(([id,_photos,error])=>[id,error]).filter(([,error])=>Boolean(error))));
+      }
     };
     void load();
     return()=>{cancelled=true;};
@@ -1760,6 +1779,7 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
         const schedule=scheduleOf(String(job.date||""));
         const accent=companyAccent(job.company);
         const photos=photoMap[String(job.dbId)]||[];
+        const photoError=photoErrorMap[String(job.dbId)]||"";
         return <div key={String(job.dbId||job.id)} className="relative w-full overflow-hidden rounded-2xl bg-white p-4 pl-5 text-left shadow-sm">
           <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`}></span>
           <div className="flex items-start justify-between gap-3">
@@ -1771,7 +1791,7 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
           </div>
           <div className="mt-2 flex items-center gap-2 whitespace-nowrap">
             <b className="min-w-0 text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
-            <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>
+            {step === "접수" && <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>}
           </div>
           <div className="mt-3 grid grid-cols-[1fr_112px] gap-3">
             <button type="button" onClick={()=>open(job)} className="min-w-0 text-left">
@@ -1786,7 +1806,7 @@ function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job
                 <img src={photos[0].url} alt="접수사진" className="h-full min-h-[104px] w-full object-cover"/>
                 <button type="button" onClick={()=>window.open(photos[0].url,"_blank")} className="absolute inset-0" aria-label="접수사진 보기"></button>
                 <span className="absolute bottom-2 right-2 rounded-full bg-black/65 px-2 py-1 text-[10px] font-black text-white">사진 {photos.length}장</span>
-              </> : <button type="button" onClick={()=>open(job)} className="flex h-full min-h-[104px] w-full flex-col items-center justify-center gap-1 text-xs font-black text-slate-400"><ImageIcon size={24}/><span>사진 없음</span></button>}
+              </> : photoError ? <button type="button" onClick={()=>open(job)} title={photoError} className="flex h-full min-h-[104px] w-full flex-col items-center justify-center gap-1 px-2 text-center text-[10px] font-black text-rose-500"><ImageIcon size={24}/><span>사진 조회 실패</span><span className="line-clamp-2 font-bold text-rose-400">{photoError.replace(/^사진[^:]*:\s*/,"")}</span></button> : <button type="button" onClick={()=>open(job)} className="flex h-full min-h-[104px] w-full flex-col items-center justify-center gap-1 text-xs font-black text-slate-400"><ImageIcon size={24}/><span>사진 없음</span></button>}
             </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -2009,6 +2029,7 @@ function Detail({
   const [intakePreviewUrls,setIntakePreviewUrls]=useState<string[]>([]);
   const [storedIntakePhotos,setStoredIntakePhotos]=useState<{name:string;url:string}[]>([]);
   const [loadingStoredPhotos,setLoadingStoredPhotos]=useState(false);
+  const [storedPhotoError,setStoredPhotoError]=useState("");
   const [workflow,setWorkflow]=useState<JobWorkflow>(()=>readWorkflow(job.dbId));
   const [finishing,setFinishing]=useState(false);
   const [savingEdit,setSavingEdit]=useState(false);
@@ -2033,18 +2054,22 @@ function Detail({
 
   const loadStoredIntakePhotos=useCallback(async()=>{
     setLoadingStoredPhotos(true);
+    setStoredPhotoError("");
     try{
       const folder=`${job.dbId}/접수사진`;
       const {data,error}=await supabase.storage.from("as-job-photos").list(folder,{limit:100,sortBy:{column:"created_at",order:"asc"}});
-      if(error){ setStoredIntakePhotos([]); return; }
+      if(error){ setStoredIntakePhotos([]); setStoredPhotoError(`사진 조회 실패: ${error.message}`); return; }
       const files=(data||[]).filter(item=>item.name && item.name!==".emptyFolderPlaceholder");
       if(!files.length){ setStoredIntakePhotos([]); return; }
       const result=await Promise.all(files.map(async item=>{
         const path=`${folder}/${item.name}`;
-        const {data:signed}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
-        return signed?.signedUrl ? {name:item.name,url:signed.signedUrl} : null;
+        const {data:signed,error:signedError}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
+        return {name:item.name,url:signed?.signedUrl||"",error:signedError?.message||""};
       }));
-      setStoredIntakePhotos(result.filter((item): item is {name:string;url:string}=>Boolean(item)));
+      const valid=result.filter(item=>Boolean(item.url)).map(item=>({name:item.name,url:item.url}));
+      setStoredIntakePhotos(valid);
+      const failed=result.find(item=>item.error);
+      if(failed) setStoredPhotoError(`사진 주소 생성 실패: ${failed.error}`);
     } finally {
       setLoadingStoredPhotos(false);
     }
@@ -2143,6 +2168,7 @@ function Detail({
               </div>
             </div>
             {loadingStoredPhotos&&<p className="mt-3 text-xs font-bold text-slate-400">사진 불러오는 중...</p>}
+            {storedPhotoError&&<div className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-[11px] font-bold leading-5 text-rose-600"><b>사진을 불러오지 못했습니다.</b><br/>{storedPhotoError}<br/>Supabase Storage의 as-job-photos 버킷과 SELECT 정책을 확인해주세요.</div>}
             {storedIntakePhotos.length>0&&<div className="mt-3 grid grid-cols-4 gap-2">
               {storedIntakePhotos.map((photo,index)=><button type="button" key={photo.name} onClick={()=>window.open(photo.url,"_blank","noopener,noreferrer")} className="aspect-square overflow-hidden rounded-xl bg-white shadow-sm">
                 <img src={photo.url} alt={`저장된 접수사진 ${index+1}`} className="h-full w-full object-cover"/>
