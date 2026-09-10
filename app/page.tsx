@@ -2100,34 +2100,41 @@ function Detail({
       return next;
     });
   };
+  const withTimeout=<T,>(promise:Promise<T>,ms:number,label:string)=>Promise.race<T>([
+    promise,
+    new Promise<T>((_,reject)=>setTimeout(()=>reject(new Error(`${label} 응답이 ${Math.round(ms/1000)}초 동안 없어 중단했습니다.`)),ms))
+  ]);
   const saveEdits=async()=>{
-    if(savingEdit) return null;
-    const pendingPhotos=[...intakePhotos]; // 재렌더링돼도 실제 File 객체는 여기 보관
+    // 버튼을 disabled로 잠가 두지 않는다. 이전 요청이 멈춰도 사용자가 버튼을 다시 누를 수 있게 한다.
+    if(savingEdit){
+      setSavingEdit(false);
+      window.alert("이전 저장 요청이 멈춰 있어 잠금을 해제했습니다. 수정 내용 저장을 다시 눌러주세요.");
+      return null;
+    }
+    const pendingPhotos=[...intakePhotos];
     setSavingEdit(true);
+    say("수정 내용 저장을 시작합니다");
     try{
-      // 먼저 기존 수정내용을 정상 저장한다. 이후 job prop이 바뀌어 화면 state가 초기화돼도
-      // pendingPhotos에는 선택한 원본 File이 남아 있으므로 사진 업로드가 끊기지 않는다.
-      const next=await saveJob(edit, true);
+      const next=await withTimeout(saveJob(edit, true),12000,"접수내용 저장");
       if(!next){
         window.alert("수정 내용 저장에 실패했습니다. 고객사/고장원인 입력값과 서버 연결을 확인해주세요.");
         return null;
       }
 
       if(pendingPhotos.length){
-        const photoSaved=await uploadPhotos("접수사진",pendingPhotos,job.dbId);
+        const photoSaved=await withTimeout(uploadPhotos("접수사진",pendingPhotos,job.dbId),30000,"접수사진 업로드");
         if(photoSaved===false){
-          // 사진이 실패해도 텍스트 수정은 이미 저장됐음을 명확히 알려준다.
-          window.alert("수정 내용은 저장됐지만 접수사진 저장에 실패했습니다. 방금 표시된 사진 오류 문구를 확인해주세요.");
+          window.alert("수정 내용은 저장됐지만 접수사진 저장에 실패했습니다. 표시된 오류 문구를 확인해주세요.");
           return next;
         }
         setIntakePhotos([]);
-        // Storage 반영 직후 모바일에서 list가 늦게 갱신되는 경우를 대비해 짧게 기다렸다가 다시 읽는다.
         await new Promise(resolve=>setTimeout(resolve,250));
-        await loadStoredIntakePhotos();
+        await withTimeout(loadStoredIntakePhotos(),12000,"저장사진 새로고침");
         say(`수정 내용과 접수사진 ${pendingPhotos.length}장이 서버에 저장됐습니다`);
         window.alert(`저장 완료: 접수사진 ${pendingPhotos.length}장`);
       } else {
         say("접수 내용을 수정했습니다");
+        window.alert("수정 내용 저장 완료");
       }
       return next;
     } catch(error:any){
@@ -2135,7 +2142,9 @@ function Detail({
       say(`저장 실패: ${message}`);
       window.alert(`저장 실패: ${message}`);
       return null;
-    } finally { setSavingEdit(false); }
+    } finally {
+      setSavingEdit(false);
+    }
   };
   const moveToDispatch=async()=>{
     const next=await saveEdits();
@@ -2223,7 +2232,7 @@ function Detail({
               </div>
             </div>}
           </div>
-          <button type="button" onClick={()=>void saveEdits()} disabled={savingEdit} className="w-full rounded-2xl bg-slate-900 py-3.5 text-sm font-black text-white disabled:bg-slate-300">{savingEdit?"저장 중...":"수정 내용 저장"}</button>
+          <button type="button" onClick={()=>{ void saveEdits(); }} className={`relative z-10 w-full touch-manipulation rounded-2xl py-3.5 text-sm font-black text-white ${savingEdit?"bg-blue-600":"bg-slate-900"}`}>{savingEdit?"저장 중... (다시 누르면 잠금 해제)":"수정 내용 저장"}</button>
           <button type="button" onClick={()=>void deleteJob()} className="w-full rounded-2xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">접수건 삭제</button>
         </div>
       </section>
