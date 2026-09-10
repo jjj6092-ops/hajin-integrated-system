@@ -618,24 +618,30 @@ export default function Page() {
       return;
     }
     const j = toJob(data as JobRow);
-    let uploadedPhotos = 0;
+    const uploadedPaths: string[] = [];
     for (const [index, file] of intakePhotos.entries()) {
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${j.dbId}/접수사진/${Date.now()}-${index}-${safeName}`;
       const { error: photoError } = await supabase.storage
         .from("as-job-photos")
         .upload(path, file, { upsert: false });
-      if (!photoError) uploadedPhotos += 1;
+      if (photoError) {
+        if (uploadedPaths.length) {
+          await supabase.storage.from("as-job-photos").remove(uploadedPaths);
+        }
+        await supabase.from("as_jobs").delete().eq("id", j.dbId);
+        say("사진 저장에 실패해 A/S 접수를 완료하지 않았습니다. 다시 시도해주세요");
+        return;
+      }
+      uploadedPaths.push(path);
     }
     setJobs((x) => [j, ...x]);
     setSelected(j);
     navigate("progress");
     if (intakePhotos.length === 0) {
       say("A/S 접수가 등록됐습니다");
-    } else if (uploadedPhotos === intakePhotos.length) {
-      say(`A/S 접수와 접수사진 ${uploadedPhotos}장이 등록됐습니다`);
     } else {
-      say(`접수는 완료됐지만 사진은 ${uploadedPhotos}/${intakePhotos.length}장 저장됐습니다`);
+      say(`A/S 접수와 접수사진 ${intakePhotos.length}장이 서버에 저장됐습니다`);
     }
   };
   const updateStatus = async (s: Status) => {
@@ -690,7 +696,7 @@ export default function Page() {
     setJobs((current) => current.map((job) => job.dbId === next.dbId ? next : job));
     say("방문 일정과 현장 위치를 수정했습니다");
   };
-  const saveJob = async (values: {company:string;site:string;manager:string;phone:string;machine:string;issue:string;date:string;time:string;worker:string;requiredEquipment:string;specialNotes:string;}) => {
+  const saveJob = async (values: {company:string;site:string;manager:string;phone:string;machine:string;issue:string;date:string;time:string;worker:string;requiredEquipment:string;specialNotes:string;}, silent = false) => {
     if (!user || !selected) return null;
     const payload = {
       company: values.company.trim(),
@@ -708,7 +714,7 @@ export default function Page() {
     const next = toJob(data as JobRow);
     setSelected(next);
     setJobs(current => current.map(job => job.dbId === next.dbId ? next : job));
-    say("접수 내용을 수정했습니다");
+    if (!silent) say("접수 내용을 수정했습니다");
     return next;
   };
   const deleteJob = async () => {
@@ -730,14 +736,20 @@ export default function Page() {
   };
 
   const uploadJobPhotos = async (category: string, files: File[]) => {
-    if (!user || !selected || !files.length) return;
+    if (!user || !selected || !files.length) return true;
+    const uploadedPaths: string[] = [];
     for (const [index,file] of files.entries()) {
       const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
       const path=`${selected.dbId}/${category}/${Date.now()}-${index}-${safeName}`;
       const { error }=await supabase.storage.from("as-job-photos").upload(path,file,{upsert:false});
-      if(error){say("사진을 저장하지 못했습니다");return;}
+      if(error){
+        if(uploadedPaths.length) await supabase.storage.from("as-job-photos").remove(uploadedPaths);
+        say("사진을 서버에 저장하지 못했습니다. 다시 시도해주세요");
+        return false;
+      }
+      uploadedPaths.push(path);
     }
-    say(`${category} 사진 ${files.length}장을 첨부했습니다`);
+    return true;
   };
   if (!authReady || !dataReady) return <AuthLoading />;
   if (initError) return <ConnectionError message={initError} />;
@@ -837,6 +849,7 @@ export default function Page() {
                 setView(nextView);
               }}
               open={open}
+              refreshJobs={loadJobs}
             />
           )}{" "}
           {view === "calendar" && (
@@ -1153,10 +1166,12 @@ function Dashboard({
   jobs,
   setView,
   open,
+  refreshJobs,
 }: {
   jobs: Job[];
   setView: (v: View) => void;
   open: (j: Job) => void;
+  refreshJobs: () => Promise<void>;
 }) {
   const [openOffice,setOpenOffice]=useState<string | null>(null);
   const [workflowMode,setWorkflowMode]=useState<WorkflowStep | null>(null);
@@ -1184,7 +1199,7 @@ function Dashboard({
     { key:"sales", label:"매출매입관리", icon:CircleDollarSign, color:"bg-indigo-50 text-indigo-700", iconColor:"bg-indigo-600 text-white", children:[{label:"매출 관리"},{label:"매입 관리"},{label:"입금·미수 확인"}] },
   ];
   if (workflowMode) {
-    return <WorkflowStageJobs jobs={jobs} step={workflowMode} open={open} close={() => setWorkflowMode(null)} />;
+    return <WorkflowStageJobs jobs={jobs} step={workflowMode} open={open} close={() => setWorkflowMode(null)} refreshJobs={refreshJobs} />;
   }
   return (
     <>
@@ -1542,11 +1557,39 @@ function Empty({ text }: { text: string }) {
 function Register({ add }: { add: (f: FormData) => Promise<void> }) {
   const [companyChoice,setCompanyChoice]=useState("");
   const [otherCompany,setOtherCompany]=useState("");
-  const [intakeCameraCount,setIntakeCameraCount]=useState(0);
-  const [intakeGalleryCount,setIntakeGalleryCount]=useState(0);
-  const intakePhotoCount=intakeCameraCount+intakeGalleryCount;
+  const [intakePhotos,setIntakePhotos]=useState<File[]>([]);
+  const [submitting,setSubmitting]=useState(false);
+  const [previewUrls,setPreviewUrls]=useState<string[]>([]);
+
+  useEffect(()=>{
+    const urls=intakePhotos.map(file=>URL.createObjectURL(file));
+    setPreviewUrls(urls);
+    return ()=>urls.forEach(url=>URL.revokeObjectURL(url));
+  },[intakePhotos]);
+
+  const appendIntakePhotos=(files:File[])=>{
+    const images=files.filter(file=>file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name));
+    if(!images.length) return;
+    setIntakePhotos(current=>[...current,...images].slice(0,10));
+  };
+
+  const submit=async(event:React.FormEvent<HTMLFormElement>)=>{
+    event.preventDefault();
+    if(submitting) return;
+    const form=event.currentTarget;
+    const data=new FormData(form);
+    data.delete("intake_photos");
+    intakePhotos.forEach(file=>data.append("intake_photos",file,file.name));
+    setSubmitting(true);
+    try{
+      await add(data);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
-    <form action={add} className="mt-5">
+    <form onSubmit={submit} className="mt-5">
       <section className="rounded-3xl bg-white p-4 shadow-sm">
         <div className="mb-4">
           <p className="text-sm font-black text-slate-500">신규 접수</p>
@@ -1587,15 +1630,21 @@ function Register({ add }: { add: (f: FormData) => Promise<void> }) {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <b className="text-sm text-blue-800">접수사진 추가</b>
-                <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotoCount ? `총 ${intakePhotoCount}장 선택됨` : "필요할 때만 추가"}</p>
+                <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `총 ${intakePhotos.length}장 선택됨` : "필요할 때만 추가"}</p>
               </div>
               <div className="flex gap-2">
-                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" name="intake_photos" accept="image/*" capture="environment" className="sr-only" onChange={(event)=>setIntakeCameraCount(event.target.files?.length ?? 0)}/></label>
-                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" name="intake_photos" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple className="sr-only" onClick={(event)=>{event.currentTarget.value=""}} onChange={(event)=>setIntakeGalleryCount(event.target.files?.length ?? 0)}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={(e)=>{appendIntakePhotos(Array.from(e.target.files||[])); e.currentTarget.value="";}}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onChange={(e)=>{appendIntakePhotos(Array.from(e.target.files||[])); e.currentTarget.value="";}}/></label>
               </div>
             </div>
+            {previewUrls.length>0&&<div className="mt-3 grid grid-cols-4 gap-2">
+              {previewUrls.map((url,index)=><div key={url} className="relative aspect-square overflow-hidden rounded-xl bg-white">
+                <img src={url} alt={`접수사진 ${index+1}`} className="h-full w-full object-cover"/>
+                <button type="button" onClick={()=>setIntakePhotos(current=>current.filter((_,i)=>i!==index))} className="absolute right-1 top-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10px] font-black text-white">×</button>
+              </div>)}
+            </div>}
           </div>
-          <button className="w-full rounded-2xl bg-[#1855a6] py-3.5 text-sm font-black text-white shadow-md">A/S 접수 등록</button>
+          <button disabled={submitting} className="w-full rounded-2xl bg-[#1855a6] py-3.5 text-sm font-black text-white shadow-md disabled:bg-slate-300">{submitting?"등록 중...":"A/S 접수 등록"}</button>
         </div>
       </section>
     </form>
@@ -1618,13 +1667,51 @@ function Field({ n, l, p }: { n: string; l: string; p: string }) {
     </label>
   );
 }
-function WorkflowStageJobs({ jobs, step, open, close }: { jobs: Job[]; step: WorkflowStep; open: (j: Job) => void; close: () => void; }) {
+function WorkflowStageJobs({ jobs, step, open, close, refreshJobs }: { jobs: Job[]; step: WorkflowStep; open: (j: Job) => void; close: () => void; refreshJobs: () => Promise<void>; }) {
   const visible = jobs.filter((job) => workflowStepOfJob(job) === step).sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const [scheduleJob,setScheduleJob]=useState<Job|null>(null);
+  const [scheduleDate,setScheduleDate]=useState("");
+  const [scheduleTime,setScheduleTime]=useState("");
+  const [savingSchedule,setSavingSchedule]=useState(false);
+  const [photoMap,setPhotoMap]=useState<Record<string,{name:string;url:string}[]>>({});
   const descriptions: Record<WorkflowStep,string> = {
     "접수":"접수 후 일정·견적을 확인할 업무",
     "출동":"일정이 잡혀 준비·출동·현장 작업 중인 업무",
     "작업완료":"수리는 끝났고 입금·거래명세서 정리가 남은 업무",
     "정산완료":"입금 확인과 거래명세서 발송까지 끝난 업무",
+  };
+  useEffect(()=>{
+    let cancelled=false;
+    const load=async()=>{
+      const entries=await Promise.all(visible.map(async(job)=>{
+        const folder=`${job.dbId}/접수사진`;
+        const {data,error}=await supabase.storage.from("as-job-photos").list(folder,{limit:30,sortBy:{column:"created_at",order:"asc"}});
+        if(error) return [String(job.dbId),[]] as const;
+        const files=(data||[]).filter(item=>item.name && item.name!==".emptyFolderPlaceholder");
+        const photos=(await Promise.all(files.map(async item=>{
+          const path=`${folder}/${item.name}`;
+          const {data:signed}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
+          return signed?.signedUrl?{name:item.name,url:signed.signedUrl}:null;
+        }))).filter((x): x is {name:string;url:string}=>Boolean(x));
+        return [String(job.dbId),photos] as const;
+      }));
+      if(!cancelled) setPhotoMap(Object.fromEntries(entries));
+    };
+    void load();
+    return()=>{cancelled=true;};
+  },[visible.map(j=>j.dbId).join(",")]);
+  const beginSchedule=(job:Job)=>{
+    const sc=scheduleOf(String(job.date||""));
+    setScheduleJob(job); setScheduleDate(sc.dateKey||""); setScheduleTime(sc.time||"");
+  };
+  const saveQuickSchedule=async()=>{
+    if(!scheduleJob || !scheduleDate) return;
+    setSavingSchedule(true);
+    const {error}=await supabase.from("as_jobs").update({visit_note:joinVisitMeta(scheduleDate,scheduleTime,scheduleJob.requiredEquipment,scheduleJob.specialNotes)}).eq("id",scheduleJob.dbId);
+    setSavingSchedule(false);
+    if(error){ window.alert("일정 변경에 실패했습니다."); return; }
+    setScheduleJob(null);
+    await refreshJobs();
   };
   return <div className="mt-5">
     <div className="mb-4 flex items-center gap-3">
@@ -1635,27 +1722,49 @@ function WorkflowStageJobs({ jobs, step, open, close }: { jobs: Job[]; step: Wor
       {visible.length===0 ? <div className="rounded-2xl bg-white p-8 text-center text-sm font-bold text-slate-400">해당 단계의 업무가 없습니다.</div> : visible.map(job => {
         const schedule=scheduleOf(String(job.date||""));
         const accent=companyAccent(job.company);
-        return <button key={String(job.dbId||job.id)} type="button" onClick={()=>open(job)} className="relative w-full overflow-hidden rounded-2xl bg-white p-4 pl-5 text-left shadow-sm active:scale-[0.99]">
+        const photos=photoMap[String(job.dbId)]||[];
+        return <div key={String(job.dbId||job.id)} className="relative w-full overflow-hidden rounded-2xl bg-white p-4 pl-5 text-left shadow-sm">
           <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`}></span>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${accent.tag}`}>{job.company || "기타"}</span>
-              <b className="mt-2 block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <b className="block text-base">{schedule.dateKey || "날짜 미정"} · {displayTime(schedule.time)}</b>
+                <button type="button" onClick={()=>beginSchedule(job)} className="inline-flex items-center gap-1 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-[11px] font-black text-blue-700"><CalendarDays size={14}/>일정변경</button>
+              </div>
             </div>
             <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black">{step === "접수" ? "출동" : step}</span>
           </div>
-          <div className="mt-3 space-y-1.5 text-sm">
-            <p><span className="font-black text-slate-500">출동장소</span> · <b>{job.site || "미입력"}</b></p>
-            <p><span className="font-black text-slate-500">고장원인</span> · <b>{job.issue || "미입력"}</b></p>
-            <p><span className="font-black text-slate-500">담당자</span> · <b>{job.manager || "미입력"}</b>{job.phone ? ` · ${job.phone}` : ""}</p>
+          <div className="mt-3 grid grid-cols-[1fr_112px] gap-3">
+            <button type="button" onClick={()=>open(job)} className="min-w-0 text-left">
+              <div className="space-y-1.5 text-sm">
+                <p><span className="font-black text-slate-500">출동장소</span> · <b>{job.site || "미입력"}</b></p>
+                <p><span className="font-black text-slate-500">고장원인</span> · <b>{job.issue || "미입력"}</b></p>
+                <p><span className="font-black text-slate-500">담당자</span> · <b>{job.manager || "미입력"}</b>{job.phone ? ` · ${job.phone}` : ""}</p>
+              </div>
+            </button>
+            <div className="relative min-h-[104px] overflow-hidden rounded-2xl bg-slate-100">
+              {photos.length ? <>
+                <img src={photos[0].url} alt="접수사진" className="h-full min-h-[104px] w-full object-cover"/>
+                <button type="button" onClick={()=>window.open(photos[0].url,"_blank")} className="absolute inset-0" aria-label="접수사진 보기"></button>
+                <span className="absolute bottom-2 right-2 rounded-full bg-black/65 px-2 py-1 text-[10px] font-black text-white">사진 {photos.length}장</span>
+              </> : <button type="button" onClick={()=>open(job)} className="flex h-full min-h-[104px] w-full flex-col items-center justify-center gap-1 text-xs font-black text-slate-400"><ImageIcon size={24}/><span>사진 없음</span></button>}
+            </div>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
             <div className="min-h-[54px] rounded-xl bg-slate-50 p-2.5"><span className="block font-black text-slate-500">필요장비</span><b className="mt-1 block break-words">{job.requiredEquipment || "미입력"}</b></div>
             <div className="min-h-[54px] rounded-xl bg-slate-50 p-2.5"><span className="block font-black text-slate-500">전달 및 특이사항</span><b className="mt-1 block break-words">{job.specialNotes || "미입력"}</b></div>
           </div>
-        </button>;
+        </div>;
       })}
     </div>
+    {scheduleJob && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/40 p-4 sm:items-center">
+      <div className="w-full max-w-md rounded-[24px] bg-white p-5 shadow-2xl">
+        <div className="flex items-center justify-between"><div><p className="text-xs font-black text-blue-600">일정변경</p><h3 className="mt-1 text-lg font-black">{scheduleJob.company} 방문 일정</h3></div><button type="button" onClick={()=>setScheduleJob(null)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black">취소</button></div>
+        <div className="mt-4 grid grid-cols-2 gap-2"><label className="text-xs font-black text-slate-600">날짜<input type="date" value={scheduleDate} onChange={e=>setScheduleDate(e.target.value)} className="input mt-1"/></label><label className="text-xs font-black text-slate-600">시간<input type="time" value={scheduleTime} onChange={e=>setScheduleTime(e.target.value)} className="input mt-1"/></label></div>
+        <button type="button" disabled={savingSchedule} onClick={saveQuickSchedule} className="mt-4 w-full rounded-2xl bg-blue-600 py-3.5 text-sm font-black text-white disabled:bg-slate-300">{savingSchedule?"변경 중...":"일정 변경 저장"}</button>
+      </div>
+    </div>}
   </div>;
 }
 
@@ -1848,6 +1957,9 @@ function Detail({
   const [value, setValue] = useState(job.resolution);
   const [photos,setPhotos]=useState<Record<string,File[]>>({});
   const [intakePhotos,setIntakePhotos]=useState<File[]>([]);
+  const [intakePreviewUrls,setIntakePreviewUrls]=useState<string[]>([]);
+  const [storedIntakePhotos,setStoredIntakePhotos]=useState<{name:string;url:string}[]>([]);
+  const [loadingStoredPhotos,setLoadingStoredPhotos]=useState(false);
   const [workflow,setWorkflow]=useState<JobWorkflow>(()=>readWorkflow(job.dbId));
   const [finishing,setFinishing]=useState(false);
   const [savingEdit,setSavingEdit]=useState(false);
@@ -1864,16 +1976,49 @@ function Detail({
     setWorkflow(readWorkflow(job.dbId));
   }, [job.dbId, job.resolution, job.company, job.site, job.manager, job.phone, job.machine, job.issue, job.date, job.worker, job.requiredEquipment, job.specialNotes]);
 
+  useEffect(()=>{
+    const urls=intakePhotos.map(file=>URL.createObjectURL(file));
+    setIntakePreviewUrls(urls);
+    return ()=>urls.forEach(url=>URL.revokeObjectURL(url));
+  },[intakePhotos]);
+
+  const loadStoredIntakePhotos=useCallback(async()=>{
+    setLoadingStoredPhotos(true);
+    try{
+      const folder=`${job.dbId}/접수사진`;
+      const {data,error}=await supabase.storage.from("as-job-photos").list(folder,{limit:100,sortBy:{column:"created_at",order:"asc"}});
+      if(error){ setStoredIntakePhotos([]); return; }
+      const files=(data||[]).filter(item=>item.name && item.name!==".emptyFolderPlaceholder");
+      if(!files.length){ setStoredIntakePhotos([]); return; }
+      const result=await Promise.all(files.map(async item=>{
+        const path=`${folder}/${item.name}`;
+        const {data:signed}=await supabase.storage.from("as-job-photos").createSignedUrl(path,60*60);
+        return signed?.signedUrl ? {name:item.name,url:signed.signedUrl} : null;
+      }));
+      setStoredIntakePhotos(result.filter((item): item is {name:string;url:string}=>Boolean(item)));
+    } finally {
+      setLoadingStoredPhotos(false);
+    }
+  },[job.dbId]);
+
+  useEffect(()=>{ void loadStoredIntakePhotos(); },[loadStoredIntakePhotos]);
+
   const setField=(key:keyof typeof edit,value:string)=>setEdit(current=>({...current,[key]:value}));
   const appendFiles=(category:string,files:File[])=>setPhotos(current=>({...current,[category]:[...(current[category]||[]),...files]}));
   const saveEdits=async()=>{
     if(savingEdit) return null;
     setSavingEdit(true);
     try{
-      const next=await saveJob(edit);
-      if(next && intakePhotos.length){
-        await uploadPhotos("접수사진",intakePhotos);
+      const next=await saveJob(edit, true);
+      if(!next) return null;
+      if(intakePhotos.length){
+        const photoSaved=await uploadPhotos("접수사진",intakePhotos);
+        if(photoSaved===false) return null;
         setIntakePhotos([]);
+        await loadStoredIntakePhotos();
+        say(`접수 내용과 접수사진 ${intakePhotos.length}장이 서버에 저장됐습니다`);
+      } else {
+        say("접수 내용을 수정했습니다");
       }
       return next;
     } finally { setSavingEdit(false); }
@@ -1891,7 +2036,10 @@ function Detail({
       await save(value);
       for(const category of ["작업 전","작업 후"]){
         const files=photos[category]||[];
-        if(files.length) await uploadPhotos(category,files);
+        if(files.length){
+          const photoSaved=await uploadPhotos(category,files);
+          if(photoSaved===false) return;
+        }
       }
       await update("처리완료");
       saveWorkflow({step:"작업완료"});
@@ -1934,7 +2082,31 @@ function Detail({
             <label className="block text-sm font-bold">전달 및 특이사항<textarea value={edit.specialNotes} onChange={e=>setField("specialNotes",e.target.value)} rows={4} className="input resize-none" placeholder="출입방법·주차·고객 요청사항" /></label>
           </div>
           <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-3">
-            <div className="flex items-center justify-between gap-3"><div><b className="text-sm text-blue-800">접수사진 추가</b><p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `${intakePhotos.length}장 선택됨` : "필요할 때만 추가"}</p></div><label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onClick={e=>{e.currentTarget.value=""}} onChange={e=>setIntakePhotos(Array.from(e.target.files||[]))}/></label></div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <b className="text-sm text-blue-800">접수사진</b>
+                <p className="mt-0.5 text-[11px] font-bold text-blue-600">{intakePhotos.length ? `새 사진 ${intakePhotos.length}장 선택됨` : storedIntakePhotos.length ? `저장된 사진 ${storedIntakePhotos.length}장` : "필요할 때만 추가"}</p>
+              </div>
+              <div className="flex gap-2">
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">촬영<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={e=>{setIntakePhotos(current=>[...current,...Array.from(e.target.files||[])]);e.currentTarget.value="";}}/></label>
+                <label className="cursor-pointer rounded-xl bg-white px-3 py-2 text-xs font-black text-blue-700 shadow-sm">갤러리<input type="file" accept="image/*" multiple className="sr-only" onChange={e=>{setIntakePhotos(current=>[...current,...Array.from(e.target.files||[])]);e.currentTarget.value="";}}/></label>
+              </div>
+            </div>
+            {loadingStoredPhotos&&<p className="mt-3 text-xs font-bold text-slate-400">사진 불러오는 중...</p>}
+            {storedIntakePhotos.length>0&&<div className="mt-3 grid grid-cols-4 gap-2">
+              {storedIntakePhotos.map((photo,index)=><button type="button" key={photo.name} onClick={()=>window.open(photo.url,"_blank","noopener,noreferrer")} className="aspect-square overflow-hidden rounded-xl bg-white shadow-sm">
+                <img src={photo.url} alt={`저장된 접수사진 ${index+1}`} className="h-full w-full object-cover"/>
+              </button>)}
+            </div>}
+            {intakePreviewUrls.length>0&&<div className="mt-3">
+              <p className="mb-2 text-[11px] font-black text-blue-700">새로 추가할 사진</p>
+              <div className="grid grid-cols-4 gap-2">
+                {intakePreviewUrls.map((url,index)=><div key={url} className="relative aspect-square overflow-hidden rounded-xl bg-white">
+                  <img src={url} alt={`새 접수사진 ${index+1}`} className="h-full w-full object-cover"/>
+                  <button type="button" onClick={()=>setIntakePhotos(current=>current.filter((_,i)=>i!==index))} className="absolute right-1 top-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10px] font-black text-white">×</button>
+                </div>)}
+              </div>
+            </div>}
           </div>
           <button type="button" onClick={()=>void saveEdits()} disabled={savingEdit} className="w-full rounded-2xl bg-slate-900 py-3.5 text-sm font-black text-white disabled:bg-slate-300">{savingEdit?"저장 중...":"수정 내용 저장"}</button>
           <button type="button" onClick={()=>void deleteJob()} className="w-full rounded-2xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">접수건 삭제</button>
