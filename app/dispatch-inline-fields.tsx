@@ -22,7 +22,8 @@ export default function DispatchInlineFields() {
       let current: HTMLElement | null = start as HTMLElement;
       while (current && current !== document.body) {
         const text = current.innerText || "";
-        if (text.includes("출동기사") && text.includes("필요장비") && text.includes("전달 및 특이사항")) return current;
+        const hasWorkInfo = (text.includes("필요장비") && text.includes("전달 및 특이사항")) || text.includes("작업내용 및 특이사항");
+        if (text.includes("출동기사") && hasWorkInfo) return current;
         current = current.parentElement;
       }
       return null;
@@ -52,11 +53,14 @@ export default function DispatchInlineFields() {
       image.style.height = "100%";
       image.style.minHeight = "0";
       image.style.objectFit = "cover";
-      const plus = wrap.querySelector("button");
+      const plus = wrap.querySelector('[data-hajin-photo-add="true"]');
       if (plus instanceof HTMLElement) {
         plus.style.width = "24px";
         plus.style.height = "24px";
         plus.style.minWidth = "24px";
+        plus.style.top = "5px";
+        plus.style.right = "5px";
+        plus.style.fontSize = "14px";
       }
       const badge = Array.from(wrap.querySelectorAll("span,div")).find((node) => node.textContent?.trim().startsWith("사진 ")) as HTMLElement | undefined;
       if (badge) {
