@@ -42,6 +42,7 @@ export default function DispatchInlineFields() {
       wrap.style.flex = "0 0 48px";
       wrap.style.alignSelf = "start";
       wrap.style.marginLeft = "auto";
+      wrap.style.transform = "translateX(-88px)";
       wrap.style.borderRadius = "14px";
       wrap.style.overflow = "hidden";
       const detailsRow = wrap.parentElement as HTMLElement | null;
