@@ -33,19 +33,19 @@ export default function DispatchInlineFields() {
       if (!image) return;
       const wrap = image.parentElement as HTMLElement | null;
       if (!wrap) return;
-      wrap.style.width = "78px";
-      wrap.style.height = "88px";
-      wrap.style.minWidth = "78px";
-      wrap.style.minHeight = "88px";
-      wrap.style.maxHeight = "88px";
-      wrap.style.flex = "0 0 78px";
+      wrap.style.width = "60px";
+      wrap.style.height = "68px";
+      wrap.style.minWidth = "60px";
+      wrap.style.minHeight = "68px";
+      wrap.style.maxHeight = "68px";
+      wrap.style.flex = "0 0 60px";
       wrap.style.alignSelf = "start";
       wrap.style.marginLeft = "auto";
       wrap.style.borderRadius = "14px";
       wrap.style.overflow = "hidden";
       const detailsRow = wrap.parentElement as HTMLElement | null;
       if (detailsRow) {
-        detailsRow.style.gridTemplateColumns = "minmax(0, 1fr) 78px";
+        detailsRow.style.gridTemplateColumns = "minmax(0, 1fr) 60px";
         detailsRow.style.gap = "10px";
       }
       image.style.width = "100%";
@@ -54,9 +54,9 @@ export default function DispatchInlineFields() {
       image.style.objectFit = "cover";
       const plus = wrap.querySelector("button");
       if (plus instanceof HTMLElement) {
-        plus.style.width = "30px";
-        plus.style.height = "30px";
-        plus.style.minWidth = "30px";
+        plus.style.width = "24px";
+        plus.style.height = "24px";
+        plus.style.minWidth = "24px";
       }
       const badge = Array.from(wrap.querySelectorAll("span,div")).find((node) => node.textContent?.trim().startsWith("사진 ")) as HTMLElement | undefined;
       if (badge) {
@@ -102,9 +102,8 @@ export default function DispatchInlineFields() {
       const specialBox = specialLabel.parentElement as HTMLElement | null;
       const grid = requiredBox?.parentElement as HTMLElement | null;
       if (!requiredBox || !specialBox || !grid || specialBox.parentElement !== grid) return;
-      const requiredValue = requiredBox.querySelector("b")?.textContent?.trim() || "";
       const specialValue = specialBox.querySelector("b")?.textContent?.trim() || "";
-      const values = [requiredValue, specialValue].filter((value, index, list) => value && value !== "미입력" && list.indexOf(value) === index);
+      const values = [specialValue].filter((value) => value && value !== "미입력");
       const merged = document.createElement("div");
       merged.dataset.hajinWorkInfoBox = "true";
       merged.className = "min-h-[76px] cursor-pointer rounded-2xl bg-slate-50 px-3.5 py-3 transition active:bg-slate-100";
@@ -178,8 +177,19 @@ export default function DispatchInlineFields() {
         if (box.querySelector("textarea")) return;
         const parts = String(row.visit_note || "").split(META);
         const scheduleText = parts[0] || "";
-        const requiredEquipment = parts[1] || "";
-        const currentNotes = parts.slice(2).join(META);
+        let requiredEquipment = "";
+        let currentNotes = parts.slice(2).join(META);
+        try {
+          const parsed = JSON.parse(decodeURIComponent(parts[1] || ""));
+          requiredEquipment = String(parsed?.requiredEquipment || "");
+          if (!currentNotes) currentNotes = String(parsed?.specialNotes || "");
+          if (/^%7B/i.test(requiredEquipment)) {
+            const nested = JSON.parse(decodeURIComponent(requiredEquipment));
+            requiredEquipment = String(nested?.requiredEquipment || "");
+          }
+        } catch {
+          requiredEquipment = "";
+        }
         const previousText = value.textContent || "미입력";
 
         const editor = document.createElement("textarea");
@@ -206,7 +216,8 @@ export default function DispatchInlineFields() {
           event.preventDefault(); event.stopPropagation();
           save.disabled = true; save.textContent = "저장 중";
           const nextNotes = editor.value.trim();
-          const nextVisit = `${scheduleText}${META}${requiredEquipment}${META}${nextNotes}`;
+          const encodedMeta = encodeURIComponent(JSON.stringify({ requiredEquipment, specialNotes: nextNotes }));
+          const nextVisit = `${scheduleText}${META}${encodedMeta}`;
           const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit }).eq("id", row.id);
           if (error) {
             window.alert("작업내용 저장에 실패했습니다.");
@@ -214,7 +225,7 @@ export default function DispatchInlineFields() {
             return;
           }
           row.visit_note = nextVisit;
-          value.textContent = [requiredEquipment, nextNotes].filter(Boolean).join(" · ") || "미입력";
+          value.textContent = nextNotes || "미입력";
           closeEditor();
         });
 
@@ -313,7 +324,7 @@ export default function DispatchInlineFields() {
         applyButton.type = "button";
         applyButton.textContent = "방문일정수정";
         applyButton.className = "whitespace-nowrap rounded-full bg-blue-600 px-3 text-[12px] font-black text-white shadow-sm active:scale-[0.98] disabled:bg-blue-300";
-        const statusHeight = Math.max(32, Math.round((mark as HTMLElement).getBoundingClientRect().height));
+        const statusHeight = Math.round((mark as HTMLElement).getBoundingClientRect().height) || 28;
         [dateWrap, timeWrap, applyButton].forEach((element) => {
           element.style.height = `${statusHeight}px`;
           element.style.minHeight = `${statusHeight}px`;
