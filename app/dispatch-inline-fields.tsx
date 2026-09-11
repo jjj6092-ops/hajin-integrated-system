@@ -58,17 +58,30 @@ export default function DispatchInlineFields() {
     };
 
     const compactCardSpacing = (card: HTMLElement) => {
-      if (card.dataset.hajinCompactCard === "true") return;
-      card.dataset.hajinCompactCard = "true";
-      card.style.paddingTop = "16px";
-      card.style.paddingBottom = "16px";
+      card.style.paddingTop = "14px";
+      card.style.paddingBottom = "14px";
       card.style.minHeight = "0";
       const children = Array.from(card.children) as HTMLElement[];
       children.forEach((child) => {
         const style = window.getComputedStyle(child);
-        if (parseFloat(style.marginTop) > 20) child.style.marginTop = "12px";
-        if (parseFloat(style.marginBottom) > 20) child.style.marginBottom = "12px";
+        if (parseFloat(style.marginTop) > 16) child.style.marginTop = "10px";
+        if (parseFloat(style.marginBottom) > 16) child.style.marginBottom = "10px";
       });
+    };
+
+    const compactDetailBlock = (card: HTMLElement) => {
+      const labels = Array.from(card.querySelectorAll("span,b,p"));
+      const start = labels.find((node) => node.textContent?.trim() === "출동장소") as HTMLElement | undefined;
+      if (!start) return;
+      let block: HTMLElement | null = start.parentElement;
+      while (block && block !== card) {
+        const text = block.innerText || "";
+        if (text.includes("출동장소") && text.includes("고장원인") && text.includes("담당자")) break;
+        block = block.parentElement;
+      }
+      if (!block || block === card) return;
+      block.style.marginTop = "16px";
+      block.style.marginBottom = "8px";
     };
 
     const mergeWorkInfoBoxes = (card: HTMLElement) => {
@@ -161,6 +174,7 @@ export default function DispatchInlineFields() {
         if (!card) continue;
         compactCardSpacing(card);
         compactWorkPhoto(card);
+        compactDetailBlock(card);
         mergeWorkInfoBoxes(card);
         if (card.dataset.hajinRevisitReady === "true") continue;
         card.dataset.hajinRevisitReady = "true";
@@ -173,7 +187,7 @@ export default function DispatchInlineFields() {
 
         const control = document.createElement("div");
         control.dataset.hajinRevisitControl = "true";
-        control.className = "mt-2 grid w-full grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_auto] gap-2";
+        control.className = "grid w-full grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_auto] gap-2";
         control.addEventListener("click", (event) => event.stopPropagation());
         control.addEventListener("pointerdown", (event) => event.stopPropagation());
 
@@ -219,9 +233,13 @@ export default function DispatchInlineFields() {
         });
 
         control.append(dateInput, timeInput, applyButton);
-        const dateRow = dateBold.parentElement;
-        if (dateRow) dateRow.insertAdjacentElement("afterend", control);
-        else dateBold.insertAdjacentElement("afterend", control);
+        const dateRow = dateBold.parentElement as HTMLElement | null;
+        if (dateRow) {
+          dateRow.insertAdjacentElement("afterend", control);
+          dateRow.style.display = "none";
+        } else {
+          dateBold.insertAdjacentElement("afterend", control);
+        }
       }
     };
 
