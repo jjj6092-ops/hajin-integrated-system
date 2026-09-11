@@ -107,11 +107,15 @@ export default function DispatchInlineFields() {
       const values = [requiredValue, specialValue].filter((value, index, list) => value && value !== "미입력" && list.indexOf(value) === index);
       const merged = document.createElement("div");
       merged.dataset.hajinWorkInfoBox = "true";
-      merged.className = "min-h-[76px] rounded-2xl bg-slate-50 px-3.5 py-3";
+      merged.className = "min-h-[76px] cursor-pointer rounded-2xl bg-slate-50 px-3.5 py-3 transition active:bg-slate-100";
+      merged.tabIndex = 0;
+      merged.setAttribute("role", "button");
+      merged.setAttribute("aria-label", "작업내용 및 특이사항 입력");
       const title = document.createElement("span");
       title.className = "block font-black text-slate-500";
       title.textContent = "작업내용 및 특이사항";
       const value = document.createElement("b");
+      value.dataset.hajinWorkInfoValue = "true";
       value.className = "mt-1 block break-words";
       value.textContent = values.length ? values.join(" · ") : "미입력";
       merged.append(title, value);
@@ -164,6 +168,67 @@ export default function DispatchInlineFields() {
       return { date: match?.[1] || "", time: match?.[2] || "10:00", suffix: rest.length ? `${META}${rest.join(META)}` : "" };
     };
 
+    const bindWorkInfoEditor = (card: HTMLElement, row: { id: number; visit_note?: string }) => {
+      const box = card.querySelector('[data-hajin-work-info-box="true"]') as HTMLElement | null;
+      const value = box?.querySelector('[data-hajin-work-info-value="true"]') as HTMLElement | null;
+      if (!box || !value || box.dataset.hajinWorkInfoEditable === "true") return;
+      box.dataset.hajinWorkInfoEditable = "true";
+
+      const openEditor = () => {
+        if (box.querySelector("textarea")) return;
+        const parts = String(row.visit_note || "").split(META);
+        const scheduleText = parts[0] || "";
+        const requiredEquipment = parts[1] || "";
+        const currentNotes = parts.slice(2).join(META);
+        const previousText = value.textContent || "미입력";
+
+        const editor = document.createElement("textarea");
+        editor.value = currentNotes;
+        editor.placeholder = "작업내용 및 특이사항을 입력하세요";
+        editor.rows = 3;
+        editor.className = "mt-2 w-full resize-none rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 outline-none focus:border-blue-500";
+
+        const actions = document.createElement("div");
+        actions.className = "mt-2 flex justify-end gap-2";
+        const cancel = document.createElement("button");
+        cancel.type = "button";
+        cancel.textContent = "취소";
+        cancel.className = "rounded-xl bg-slate-200 px-3 py-2 text-xs font-black text-slate-700";
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "저장";
+        save.className = "rounded-xl bg-blue-600 px-4 py-2 text-xs font-black text-white disabled:bg-blue-300";
+        actions.append(cancel, save);
+
+        const closeEditor = () => { editor.remove(); actions.remove(); value.style.display = "block"; };
+        cancel.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); value.textContent = previousText; closeEditor(); });
+        save.addEventListener("click", async (event) => {
+          event.preventDefault(); event.stopPropagation();
+          save.disabled = true; save.textContent = "저장 중";
+          const nextNotes = editor.value.trim();
+          const nextVisit = `${scheduleText}${META}${requiredEquipment}${META}${nextNotes}`;
+          const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit }).eq("id", row.id);
+          if (error) {
+            window.alert("작업내용 저장에 실패했습니다.");
+            save.disabled = false; save.textContent = "저장";
+            return;
+          }
+          row.visit_note = nextVisit;
+          value.textContent = [requiredEquipment, nextNotes].filter(Boolean).join(" · ") || "미입력";
+          closeEditor();
+        });
+
+        value.style.display = "none";
+        box.append(editor, actions);
+        editor.focus();
+      };
+
+      box.addEventListener("click", (event) => { event.stopPropagation(); openEditor(); });
+      box.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openEditor(); }
+      });
+    };
+
     const displayTime = (time: string) => {
       const match = time.match(/^(\d{1,2}):(\d{2})$/);
       if (!match) return time;
@@ -189,6 +254,7 @@ export default function DispatchInlineFields() {
         card.querySelectorAll('[data-hajin-dispatch-panel="true"]').forEach((node) => node.remove());
         const row = await resolveJob(card);
         if (!row) continue;
+        bindWorkInfoEditor(card, row);
         const schedule = scheduleParts(String(row.visit_note || ""));
         const dateBold = Array.from(card.querySelectorAll("b")).find((node) => /\d{4}-\d{2}-\d{2}/.test(node.textContent || "")) as HTMLElement | undefined;
         if (!dateBold || card.querySelector('[data-hajin-revisit-control="true"]')) continue;
@@ -258,7 +324,8 @@ export default function DispatchInlineFields() {
           if (!timeInput.value) { window.alert("방문 시간을 선택해주세요."); return; }
           applyButton.disabled = true; applyButton.textContent = "수정중";
           try {
-            const nextVisit = `${dateInput.value} ${timeInput.value}${schedule.suffix}`;
+            const latestSuffix = scheduleParts(String(row.visit_note || "")).suffix;
+            const nextVisit = `${dateInput.value} ${timeInput.value}${latestSuffix}`;
             const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit }).eq("id", row.id);
             if (error) throw error;
             try {
