@@ -4,10 +4,19 @@ const listeners = new Set<Listener>();
 let session: Session = null;
 
 async function request(path: string, options?: RequestInit) {
-  const response = await fetch(path, { credentials: "include", ...options, headers: { ...(options?.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...(options?.headers || {}) } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "요청을 처리하지 못했습니다.");
-  return data;
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch(path, { credentials: "include", ...options, signal: options?.signal || controller.signal, headers: { ...(options?.body instanceof FormData ? {} : { "Content-Type": "application/json" }), ...(options?.headers || {}) } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "요청을 처리하지 못했습니다.");
+    return data;
+  } catch (error: any) {
+    if (error?.name === "AbortError") throw new Error("서버 응답이 지연되고 있습니다. 잠시 후 다시 눌러주세요.");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function query(table: string) {
