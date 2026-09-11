@@ -48,6 +48,8 @@ export default function DispatchInlineFields() {
       if (detailsRow) {
         detailsRow.style.gridTemplateColumns = "minmax(0, 1fr) 60px";
         detailsRow.style.gap = "10px";
+        detailsRow.style.marginTop = "8px";
+        detailsRow.style.alignItems = "center";
       }
       image.style.width = "100%";
       image.style.height = "100%";
@@ -92,8 +94,8 @@ export default function DispatchInlineFields() {
         block = block.parentElement;
       }
       if (!block || block === card) return;
-      block.style.marginTop = "10px";
-      block.style.marginBottom = "6px";
+      block.style.marginTop = "0";
+      block.style.marginBottom = "0";
     };
 
     const mergeWorkInfoBoxes = (card: HTMLElement) => {
@@ -123,7 +125,7 @@ export default function DispatchInlineFields() {
       value.textContent = values.length ? values.join(" · ") : "미입력";
       merged.append(title, value);
       grid.replaceChildren(merged);
-      grid.className = "mt-4 grid grid-cols-1 gap-1 text-sm";
+      grid.className = "mt-2 grid grid-cols-1 gap-1 text-sm";
       card.dataset.hajinWorkInfoMerged = "true";
     };
 
