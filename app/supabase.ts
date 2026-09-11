@@ -14,6 +14,7 @@ function query(table: string) {
   let action = "select", payload: any = null, wantSingle = false, maybe = false;
   const filters: Array<{op:string,key:string,value:any}> = [];
   let orderBy: any = null;
+  let rowLimit: number | null = null;
   const execute = async () => {
     try {
       let data = await request("/api/data", { method: "POST", body: JSON.stringify({ table, action, payload, filters, orderBy, single: wantSingle, maybe }) });
@@ -26,12 +27,16 @@ function query(table: string) {
           }
         } catch {}
       }
+      if (action === "select" && !wantSingle && rowLimit !== null && Array.isArray(data.data)) {
+        data.data = data.data.slice(0, rowLimit);
+      }
       return { data: data.data ?? null, error: null };
     } catch (error) { return { data: null, error }; }
   };
   const b: any = {
     select() { return b; },
     order(key:string, options:any={}) { orderBy={key,ascending:options.ascending!==false}; return b; },
+    limit(value:number) { rowLimit = Number.isFinite(value) && value >= 0 ? Math.floor(value) : null; return b; },
     eq(key:string,value:any) { filters.push({op:"eq",key,value}); return b; },
     in(key:string,value:any[]) { filters.push({op:"in",key,value}); return b; },
     insert(value:any) { action="insert"; payload=value; return b; },
@@ -53,7 +58,7 @@ export const supabase = {
   },
   from: query,
   storage: { from(_bucket:string) { return {
-    async upload(path:string,file:File){ try { const form=new FormData();form.append("file",file);form.append("path",path);await request("/api/photos",{method:"POST",body:form});return {error:null}; } catch(error){return {error};} },
+    async upload(path:string,file:File,_options:any={}){ try { const form=new FormData();form.append("file",file);form.append("path",path);await request("/api/photos",{method:"POST",body:form});return {error:null}; } catch(error){return {error};} },
     async remove(paths:string[]){ try{await request("/api/photos/remove",{method:"POST",body:JSON.stringify({paths})});return {error:null};}catch(error){return {error};} },
     async createSignedUrl(path:string,_seconds:number){ try{const d=await request(`/api/photos/url?path=${encodeURIComponent(path)}`);return {data:{signedUrl:d.url},error:null};}catch(error){return {data:null,error};} },
     async list(folder:string,options:any={}){ try{const d=await request(`/api/photos/list?folder=${encodeURIComponent(folder)}&limit=${options.limit||100}`);return {data:d.data,error:null};}catch(error){return {data:null,error};} },
