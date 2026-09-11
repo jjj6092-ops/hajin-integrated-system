@@ -28,6 +28,41 @@ export default function DispatchInlineFields() {
       return null;
     };
 
+    const mergeWorkInfoBoxes = (card: HTMLElement) => {
+      if (card.dataset.hajinWorkInfoMerged === "true") return;
+
+      const labels = Array.from(card.querySelectorAll("span"));
+      const requiredLabel = labels.find((node) => node.textContent?.trim() === "필요장비");
+      const specialLabel = labels.find((node) => node.textContent?.trim() === "전달 및 특이사항");
+      if (!requiredLabel || !specialLabel) return;
+
+      const requiredBox = requiredLabel.parentElement as HTMLElement | null;
+      const specialBox = specialLabel.parentElement as HTMLElement | null;
+      const grid = requiredBox?.parentElement as HTMLElement | null;
+      if (!requiredBox || !specialBox || !grid || specialBox.parentElement !== grid) return;
+
+      const requiredValue = requiredBox.querySelector("b")?.textContent?.trim() || "";
+      const specialValue = specialBox.querySelector("b")?.textContent?.trim() || "";
+      const values = [requiredValue, specialValue].filter((value, index, list) => value && value !== "미입력" && list.indexOf(value) === index);
+
+      const merged = document.createElement("div");
+      merged.dataset.hajinWorkInfoBox = "true";
+      merged.className = "min-h-[54px] rounded-xl bg-slate-50 p-2.5";
+
+      const title = document.createElement("span");
+      title.className = "block font-black text-slate-500";
+      title.textContent = "작업내용 및 특이사항";
+
+      const value = document.createElement("b");
+      value.className = "mt-1 block break-words";
+      value.textContent = values.length ? values.join(" · ") : "미입력";
+
+      merged.append(title, value);
+      grid.replaceChildren(merged);
+      grid.className = "mt-3 grid grid-cols-1 gap-2 text-xs";
+      card.dataset.hajinWorkInfoMerged = "true";
+    };
+
     const resolveJob = async (card: HTMLElement) => {
       const existingImage = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
       if (existingImage?.src) {
@@ -100,10 +135,13 @@ export default function DispatchInlineFields() {
 
       for (const mark of workCompleteMarks) {
         const card = findCard(mark);
-        if (!card || card.dataset.hajinRevisitReady === "true") continue;
+        if (!card) continue;
+
+        mergeWorkInfoBoxes(card);
+
+        if (card.dataset.hajinRevisitReady === "true") continue;
         card.dataset.hajinRevisitReady = "true";
 
-        // 이전 버전에서 만든 큰 현장처리 입력 박스가 남아 있으면 제거
         card.querySelectorAll('[data-hajin-dispatch-panel="true"]').forEach((node) => node.remove());
 
         const row = await resolveJob(card);
