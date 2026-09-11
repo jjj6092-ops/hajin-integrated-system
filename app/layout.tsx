@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import PwaRegister from "./pwa-register";
+import UniversalBackPatches from "./universal-back-patches";
 import GlobalUiPatches from "./global-ui-patches";
 import WorkflowStagePatches from "./workflow-stage-patches";
 import WorkflowPhotoUploadPatches from "./workflow-photo-upload-patches";
@@ -41,6 +42,7 @@ export default function RootLayout({
     <html lang="ko">
       <body className="antialiased">
         <PwaRegister />
+        <UniversalBackPatches />
         <GlobalUiPatches />
         <WorkflowStagePatches />
         <WorkflowPhotoUploadPatches />
