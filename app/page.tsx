@@ -716,8 +716,24 @@ export default function Page() {
       updated_by: user.id,
     };
     if (!payload.company || !payload.issue) { say("고객사와 고장원인을 입력해주세요"); return null; }
-    const { data, error } = await supabase.from("as_jobs").update(payload).eq("id", selected.dbId).select("id,company,site,contact_phone,machine,issue,visit_note,worker,status,resolution,created_at").single();
-    if (error) { say("접수 내용을 수정하지 못했습니다"); return null; }
+    const jobId = selected.dbId;
+    const { error } = await supabase.from("as_jobs").update(payload).eq("id", jobId);
+    if (error) {
+      say(`접수 내용을 수정하지 못했습니다: ${error.message}`);
+      return null;
+    }
+
+    // 모바일 환경에서 UPDATE 응답 본문이 비어도 저장은 완료될 수 있으므로,
+    // 별도 조회로 서버에 반영된 최신 값을 확인한다.
+    const { data, error: readError } = await supabase
+      .from("as_jobs")
+      .select("id,company,site,contact_phone,machine,issue,visit_note,worker,status,resolution,created_at")
+      .eq("id", jobId)
+      .maybeSingle();
+    if (readError || !data) {
+      say(`저장 후 내용을 확인하지 못했습니다: ${readError?.message || "데이터 없음"}`);
+      return null;
+    }
     const next = toJob(data as JobRow);
     setSelected(next);
     setJobs(current => current.map(job => job.dbId === next.dbId ? next : job));
