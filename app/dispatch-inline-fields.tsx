@@ -82,6 +82,14 @@ export default function DispatchInlineFields() {
       };
     };
 
+    const displayTime = (time: string) => {
+      const match = time.match(/^(\d{1,2}):(\d{2})$/);
+      if (!match) return time;
+      const hour = Number(match[1]);
+      const minute = Number(match[2]);
+      return minute === 0 ? `${hour}시` : `${hour}시${minute}분`;
+    };
+
     const decorate = async () => {
       const heading = findDispatchHeading();
       if (!heading) return;
@@ -92,13 +100,11 @@ export default function DispatchInlineFields() {
 
       for (const mark of workCompleteMarks) {
         const card = findCard(mark);
-        if (!card) continue;
-
-        // 예전 버전의 현장 처리 입력 박스는 항상 제거
-        card.querySelectorAll('[data-hajin-dispatch-panel="true"]').forEach((node) => node.remove());
-
-        if (card.dataset.hajinRevisitReady === "true") continue;
+        if (!card || card.dataset.hajinRevisitReady === "true") continue;
         card.dataset.hajinRevisitReady = "true";
+
+        // 이전 버전에서 만든 큰 현장처리 입력 박스가 남아 있으면 제거
+        card.querySelectorAll('[data-hajin-dispatch-panel="true"]').forEach((node) => node.remove());
 
         const row = await resolveJob(card);
         if (!row) continue;
@@ -126,47 +132,62 @@ export default function DispatchInlineFields() {
         dateInput.value = schedule.date;
         dateInput.className = "hidden rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700";
 
+        const timeInput = document.createElement("input");
+        timeInput.type = "time";
+        timeInput.value = schedule.time;
+        timeInput.step = "3600";
+        timeInput.className = "hidden w-[88px] rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700";
+
         const saveButton = document.createElement("button");
         saveButton.type = "button";
-        saveButton.textContent = "적용";
-        saveButton.className = "hidden rounded-lg bg-violet-600 px-2 py-1 text-[11px] font-black text-white";
+        saveButton.textContent = "저장";
+        saveButton.className = "hidden rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-black text-white";
 
-        const toggleDate = () => {
+        const toggleInputs = () => {
           const show = check.checked;
           dateInput.classList.toggle("hidden", !show);
+          timeInput.classList.toggle("hidden", !show);
           saveButton.classList.toggle("hidden", !show);
         };
-        toggleDate();
-        check.addEventListener("change", toggleDate);
+        toggleInputs();
+        check.addEventListener("change", toggleInputs);
 
         saveButton.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
           if (!dateInput.value) { window.alert("재방문 날짜를 선택해주세요."); return; }
+          if (!timeInput.value) { window.alert("재방문 시간을 선택해주세요."); return; }
+
           saveButton.disabled = true;
-          saveButton.textContent = "저장";
+          saveButton.textContent = "저장중";
           try {
-            const nextVisit = `${dateInput.value} ${schedule.time}${schedule.suffix}`;
+            const nextVisit = `${dateInput.value} ${timeInput.value}${schedule.suffix}`;
             const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit, status: "재방문" }).eq("id", row.id);
             if (error) throw error;
+
             try {
               const all = JSON.parse(localStorage.getItem(WORKFLOW_KEY) || "{}");
               all[String(row.id)] = { ...(all[String(row.id)] || {}), step: "출동" };
               localStorage.setItem(WORKFLOW_KEY, JSON.stringify(all));
             } catch {}
+
+            row.status = "재방문";
+            row.visit_note = nextVisit;
             const currentText = dateBold.textContent || "";
-            dateBold.textContent = currentText.replace(/\d{4}-\d{2}-\d{2}/, dateInput.value);
-            saveButton.textContent = "완료";
-            window.setTimeout(() => { if (saveButton.isConnected) saveButton.textContent = "적용"; }, 1200);
+            dateBold.textContent = currentText
+              .replace(/\d{4}-\d{2}-\d{2}/, dateInput.value)
+              .replace(/\d{1,2}시(?:\d{1,2}분)?/, displayTime(timeInput.value));
+            saveButton.textContent = "저장됨";
+            window.setTimeout(() => { if (saveButton.isConnected) saveButton.textContent = "저장"; }, 1200);
           } catch {
-            window.alert("재방문 날짜 저장에 실패했습니다.");
-            saveButton.textContent = "적용";
+            window.alert("재방문 일정 저장에 실패했습니다.");
+            saveButton.textContent = "저장";
           } finally {
             saveButton.disabled = false;
           }
         });
 
-        control.append(label, dateInput, saveButton);
+        control.append(label, dateInput, timeInput, saveButton);
         dateBold.insertAdjacentElement("afterend", control);
       }
     };
