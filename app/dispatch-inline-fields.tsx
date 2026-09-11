@@ -220,12 +220,18 @@ export default function DispatchInlineFields() {
         timeText.className = "min-w-0 truncate text-[13px] font-black text-slate-800";
         timeText.textContent = displayTime(schedule.time);
 
-        const timeInput = document.createElement("input");
-        timeInput.type = "time";
+        const timeInput = document.createElement("select");
         timeInput.value = schedule.time;
-        timeInput.step = "3600";
         timeInput.setAttribute("aria-label", "방문 시간");
         timeInput.className = "absolute inset-0 h-full w-full cursor-pointer opacity-0";
+        for (let hour = 0; hour < 24; hour += 1) {
+          const option = document.createElement("option");
+          option.value = `${String(hour).padStart(2, "0")}:00`;
+          option.textContent = `${hour}시`;
+          timeInput.append(option);
+        }
+        timeInput.value = schedule.time.match(/^\d{2}:00$/) ? schedule.time : `${String(Number(schedule.time.split(":")[0]) || 0).padStart(2, "0")}:00`;
+        timeText.textContent = displayTime(timeInput.value);
         timeInput.addEventListener("input", () => { timeText.textContent = displayTime(timeInput.value); });
         timeWrap.append(makeIcon("clock"), timeText, timeInput);
 
