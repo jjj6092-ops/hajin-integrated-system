@@ -47,8 +47,8 @@ export default function DispatchInlineFields() {
       const detailsRow = wrap.parentElement as HTMLElement | null;
       if (detailsRow) {
         detailsRow.style.gridTemplateColumns = "max-content 60px";
-        detailsRow.style.justifyContent = "center";
-        detailsRow.style.gap = "16px";
+        detailsRow.style.justifyContent = "start";
+        detailsRow.style.gap = "12px";
         detailsRow.style.marginTop = "8px";
         detailsRow.style.alignItems = "center";
       }
