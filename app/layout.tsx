@@ -7,7 +7,6 @@ import WorkflowStagePatches from "./workflow-stage-patches";
 import WorkflowPhotoUploadPatches from "./workflow-photo-upload-patches";
 import DispatchInlineFields from "./dispatch-inline-fields";
 import DispatchInlineFieldsFix from "./dispatch-inline-fields-fix";
-import SaveGuardPatches from "./save-guard-patches";
 
 export const metadata: Metadata = {
   title: "하진 A/S 관리",
@@ -50,7 +49,6 @@ export default function RootLayout({
         <WorkflowPhotoUploadPatches />
         <DispatchInlineFields />
         <DispatchInlineFieldsFix />
-        <SaveGuardPatches />
         {children}
       </body>
     </html>
