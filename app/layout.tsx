@@ -4,6 +4,7 @@ import PwaRegister from "./pwa-register";
 import GlobalUiPatches from "./global-ui-patches";
 import WorkflowStagePatches from "./workflow-stage-patches";
 import WorkflowPhotoUploadPatches from "./workflow-photo-upload-patches";
+import SaveGuardPatches from "./save-guard-patches";
 
 export const metadata: Metadata = {
   title: "하진 A/S 관리",
@@ -43,6 +44,7 @@ export default function RootLayout({
         <GlobalUiPatches />
         <WorkflowStagePatches />
         <WorkflowPhotoUploadPatches />
+        <SaveGuardPatches />
         {children}
       </body>
     </html>
