@@ -33,22 +33,22 @@ export default function DispatchInlineFields() {
       if (!image) return;
       const wrap = image.parentElement as HTMLElement | null;
       if (!wrap) return;
-      wrap.style.width = "112px";
-      wrap.style.height = "112px";
-      wrap.style.minWidth = "112px";
-      wrap.style.flex = "0 0 112px";
+      wrap.style.width = "108px";
+      wrap.style.height = "128px";
+      wrap.style.minWidth = "108px";
+      wrap.style.flex = "0 0 108px";
       wrap.style.alignSelf = "start";
       wrap.style.marginLeft = "auto";
-      wrap.style.borderRadius = "18px";
+      wrap.style.borderRadius = "20px";
       wrap.style.overflow = "hidden";
       image.style.width = "100%";
       image.style.height = "100%";
       image.style.objectFit = "cover";
       const plus = wrap.querySelector("button");
       if (plus instanceof HTMLElement) {
-        plus.style.width = "38px";
-        plus.style.height = "38px";
-        plus.style.minWidth = "38px";
+        plus.style.width = "42px";
+        plus.style.height = "42px";
+        plus.style.minWidth = "42px";
       }
       const badge = Array.from(wrap.querySelectorAll("span,div")).find((node) => node.textContent?.trim().startsWith("사진 ")) as HTMLElement | undefined;
       if (badge) {
@@ -58,8 +58,8 @@ export default function DispatchInlineFields() {
     };
 
     const compactCardSpacing = (card: HTMLElement) => {
-      card.style.paddingTop = "14px";
-      card.style.paddingBottom = "14px";
+      card.style.paddingTop = "18px";
+      card.style.paddingBottom = "18px";
       card.style.minHeight = "0";
       const children = Array.from(card.children) as HTMLElement[];
       children.forEach((child) => {
@@ -80,8 +80,8 @@ export default function DispatchInlineFields() {
         block = block.parentElement;
       }
       if (!block || block === card) return;
-      block.style.marginTop = "16px";
-      block.style.marginBottom = "8px";
+      block.style.marginTop = "22px";
+      block.style.marginBottom = "10px";
     };
 
     const mergeWorkInfoBoxes = (card: HTMLElement) => {
@@ -99,7 +99,7 @@ export default function DispatchInlineFields() {
       const values = [requiredValue, specialValue].filter((value, index, list) => value && value !== "미입력" && list.indexOf(value) === index);
       const merged = document.createElement("div");
       merged.dataset.hajinWorkInfoBox = "true";
-      merged.className = "min-h-[48px] rounded-xl bg-slate-50 px-2.5 py-2";
+      merged.className = "min-h-[76px] rounded-2xl bg-slate-50 px-3.5 py-3";
       const title = document.createElement("span");
       title.className = "block font-black text-slate-500";
       title.textContent = "작업내용 및 특이사항";
@@ -108,7 +108,7 @@ export default function DispatchInlineFields() {
       value.textContent = values.length ? values.join(" · ") : "미입력";
       merged.append(title, value);
       grid.replaceChildren(merged);
-      grid.className = "mt-2 grid grid-cols-1 gap-1 text-xs";
+      grid.className = "mt-4 grid grid-cols-1 gap-1 text-sm";
       card.dataset.hajinWorkInfoMerged = "true";
     };
 
@@ -187,27 +187,52 @@ export default function DispatchInlineFields() {
 
         const control = document.createElement("div");
         control.dataset.hajinRevisitControl = "true";
-        control.className = "grid w-full grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)_auto] gap-2";
+        control.className = "mt-4 grid w-full grid-cols-[minmax(0,1.35fr)_minmax(0,.78fr)_auto] gap-2";
         control.addEventListener("click", (event) => event.stopPropagation());
         control.addEventListener("pointerdown", (event) => event.stopPropagation());
+
+        const makeIcon = (kind: "calendar" | "clock") => {
+          const icon = document.createElement("span");
+          icon.className = "pointer-events-none grid size-5 shrink-0 place-items-center text-slate-500";
+          icon.innerHTML = kind === "calendar"
+            ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="17" rx="2"/></svg>'
+            : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+          return icon;
+        };
+
+        const dateWrap = document.createElement("label");
+        dateWrap.className = "relative flex min-w-0 items-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm";
+        const dateText = document.createElement("span");
+        dateText.className = "min-w-0 truncate text-[13px] font-black text-slate-800";
+        dateText.textContent = schedule.date || "날짜 선택";
 
         const dateInput = document.createElement("input");
         dateInput.type = "date";
         dateInput.value = schedule.date;
         dateInput.setAttribute("aria-label", "방문 날짜");
-        dateInput.className = "min-w-0 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-[12px] font-black text-slate-700 outline-none focus:border-violet-500";
+        dateInput.className = "absolute inset-0 h-full w-full cursor-pointer opacity-0";
+        dateInput.addEventListener("input", () => { dateText.textContent = dateInput.value || "날짜 선택"; });
+        dateWrap.append(makeIcon("calendar"), dateText, dateInput);
+
+        const timeWrap = document.createElement("label");
+        timeWrap.className = "relative flex min-w-0 items-center gap-1.5 overflow-hidden rounded-2xl border border-slate-200 bg-white px-2.5 py-3 shadow-sm";
+        const timeText = document.createElement("span");
+        timeText.className = "min-w-0 truncate text-[13px] font-black text-slate-800";
+        timeText.textContent = displayTime(schedule.time);
 
         const timeInput = document.createElement("input");
         timeInput.type = "time";
         timeInput.value = schedule.time;
         timeInput.step = "3600";
         timeInput.setAttribute("aria-label", "방문 시간");
-        timeInput.className = "min-w-0 w-full rounded-xl border border-slate-200 bg-white px-2 py-2 text-[12px] font-black text-slate-700 outline-none focus:border-violet-500";
+        timeInput.className = "absolute inset-0 h-full w-full cursor-pointer opacity-0";
+        timeInput.addEventListener("input", () => { timeText.textContent = displayTime(timeInput.value); });
+        timeWrap.append(makeIcon("clock"), timeText, timeInput);
 
         const applyButton = document.createElement("button");
         applyButton.type = "button";
         applyButton.textContent = "방문일정수정";
-        applyButton.className = "whitespace-nowrap rounded-xl bg-violet-600 px-3 py-2 text-[12px] font-black text-white shadow-sm active:scale-[0.98]";
+        applyButton.className = "whitespace-nowrap rounded-2xl bg-blue-600 px-3 py-3 text-[12px] font-black text-white shadow-sm active:scale-[0.98] disabled:bg-blue-300";
         applyButton.addEventListener("click", async (event) => {
           event.preventDefault(); event.stopPropagation();
           if (!dateInput.value) { window.alert("방문 날짜를 선택해주세요."); return; }
@@ -232,7 +257,7 @@ export default function DispatchInlineFields() {
           } finally { applyButton.disabled = false; }
         });
 
-        control.append(dateInput, timeInput, applyButton);
+        control.append(dateWrap, timeWrap, applyButton);
         const dateRow = dateBold.parentElement as HTMLElement | null;
         if (dateRow) {
           dateRow.insertAdjacentElement("afterend", control);
