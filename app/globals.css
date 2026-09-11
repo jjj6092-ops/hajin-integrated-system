@@ -152,3 +152,10 @@ html { background: #1855a6; }
 button { cursor: pointer; }
 .input { margin-top:.5rem; width:100%; border:1px solid #dbe2ea; border-radius:1rem; background:#f8fafc; padding:.8rem 1rem; font-weight:400; outline:none; }
 .input:focus { border-color:#3b82f6; background:white; }
+
+/* Legacy field-entry block: hide only the old injected dispatch panel.
+   This is intentionally CSS-only so it does not touch click handlers,
+   navigation, photo controls, or the revisit schedule control. */
+[data-hajin-dispatch-panel="true"] {
+  display: none !important;
+}
