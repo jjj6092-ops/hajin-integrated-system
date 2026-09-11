@@ -46,8 +46,9 @@ export default function DispatchInlineFields() {
       wrap.style.overflow = "hidden";
       const detailsRow = wrap.parentElement as HTMLElement | null;
       if (detailsRow) {
-        detailsRow.style.gridTemplateColumns = "minmax(0, 1fr) 60px";
-        detailsRow.style.gap = "10px";
+        detailsRow.style.gridTemplateColumns = "max-content 60px";
+        detailsRow.style.justifyContent = "center";
+        detailsRow.style.gap = "16px";
         detailsRow.style.marginTop = "8px";
         detailsRow.style.alignItems = "center";
       }
