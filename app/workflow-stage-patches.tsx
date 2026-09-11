@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
+import { supabase } from "./supabase";
+
+const WORKFLOW_KEY = "hajin_job_workflow_v1";
 
 export default function WorkflowStagePatches() {
   useEffect(() => {
@@ -19,8 +22,8 @@ export default function WorkflowStagePatches() {
     const markDispatchActions = () => {
       const heading = findStageHeading();
       if (!heading) return;
-
       const root = heading.parentElement?.parentElement?.parentElement || document.body;
+
       Array.from(root.querySelectorAll("span")).forEach((span) => {
         if (span.textContent?.trim() !== "출동") return;
         const element = span as HTMLElement;
@@ -34,53 +37,86 @@ export default function WorkflowStagePatches() {
       });
     };
 
-    const waitForDetailDispatch = () => {
-      let attempts = 0;
-      const timer = window.setInterval(() => {
-        attempts += 1;
-        const detailTitle = Array.from(document.querySelectorAll("h2")).find(
-          (node) => node.textContent?.trim() === "A/S 접수 수정" && visible(node as HTMLElement),
-        );
-        if (detailTitle) {
-          const dispatchButton = Array.from(document.querySelectorAll("button")).find(
-            (button) => button.textContent?.trim() === "출동" && visible(button),
-          ) as HTMLButtonElement | undefined;
-          if (dispatchButton && !dispatchButton.disabled) {
-            window.clearInterval(timer);
-            dispatchButton.click();
-            advancing = false;
-            return;
-          }
-        }
-        if (attempts >= 40) {
-          window.clearInterval(timer);
-          advancing = false;
-          window.alert("출동 단계 이동 화면을 찾지 못했습니다. 접수 상세에서 출동 버튼을 눌러주세요.");
-        }
-      }, 100);
+    const findCard = (start: Element) => {
+      let current: HTMLElement | null = start as HTMLElement;
+      while (current && current !== document.body) {
+        const text = current.innerText || "";
+        if (text.includes("출동기사") && text.includes("필요장비") && text.includes("전달 및 특이사항")) return current;
+        current = current.parentElement;
+      }
+      return null;
     };
 
-    const advanceDispatch = (target: Element) => {
+    const resolveJobId = async (card: HTMLElement) => {
+      const existingImage = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
+      if (existingImage?.src) {
+        try {
+          const url = new URL(existingImage.src, window.location.origin);
+          const decoded = decodeURIComponent(url.pathname);
+          const marker = "/as-job-photos/";
+          const markerIndex = decoded.indexOf(marker);
+          if (markerIndex >= 0) {
+            const storagePath = decoded.slice(markerIndex + marker.length);
+            const firstSegment = storagePath.split("/")[0];
+            const id = Number(firstSegment);
+            if (Number.isFinite(id) && id > 0) return id;
+          }
+        } catch {}
+      }
+
+      const cardText = card.innerText || "";
+      const { data, error } = await supabase
+        .from("as_jobs")
+        .select("id,company,site,worker,visit_note,created_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error || !data?.length) return 0;
+
+      let best: { id: number; score: number } | null = null;
+      for (const row of data as Array<{ id: number; company?: string; site?: string; worker?: string; visit_note?: string }>) {
+        let score = 0;
+        const company = String(row.company || "").trim();
+        const site = String(row.site || "").trim();
+        const worker = String(row.worker || "").trim();
+        const visit = String(row.visit_note || "");
+        const date = visit.match(/\d{4}-\d{2}-\d{2}/)?.[0] || "";
+        if (company && cardText.includes(company)) score += 4;
+        if (site && cardText.includes(site)) score += 7;
+        if (worker && cardText.includes(worker)) score += 4;
+        if (date && cardText.includes(date)) score += 6;
+        if (!best || score > best.score) best = { id: Number(row.id), score };
+      }
+      return best && best.score >= 6 ? best.id : 0;
+    };
+
+    const moveCardToDispatch = async (source: Element) => {
       if (advancing) return;
-      const action = target.closest('[data-hajin-workflow-dispatch="true"]') as HTMLElement | null;
-      if (!action) return;
-
-      const card = action.closest("div.relative.w-full") || action.closest("div.rounded-2xl");
-      if (!card) return;
-
-      const openButton = Array.from(card.querySelectorAll("button")).find((button) => {
-        const text = button.textContent || "";
-        return text.includes("출동장소") && text.includes("고장원인");
-      }) as HTMLButtonElement | undefined;
-
-      if (!openButton) {
-        window.alert("접수 상세 열기 버튼을 찾지 못했습니다.");
+      const card = findCard(source);
+      if (!card) {
+        window.alert("출동 처리할 업무 카드를 찾지 못했습니다.");
         return;
       }
 
       advancing = true;
-      openButton.click();
-      waitForDetailDispatch();
+      try {
+        const jobId = await resolveJobId(card);
+        if (!jobId) throw new Error("A/S 접수건을 정확히 찾지 못했습니다.");
+
+        const { error } = await supabase.from("as_jobs").update({ status: "방문예정" }).eq("id", jobId);
+        if (error) throw new Error(error.message);
+
+        try {
+          const all = JSON.parse(localStorage.getItem(WORKFLOW_KEY) || "{}");
+          all[String(jobId)] = { ...(all[String(jobId)] || {}), step: "출동" };
+          localStorage.setItem(WORKFLOW_KEY, JSON.stringify(all));
+        } catch {}
+
+        window.location.reload();
+      } catch (error: any) {
+        window.alert(`출동 단계 이동에 실패했습니다. ${error?.message || "다시 시도해주세요."}`);
+      } finally {
+        advancing = false;
+      }
     };
 
     const handleClick = (event: MouseEvent) => {
@@ -90,7 +126,8 @@ export default function WorkflowStagePatches() {
       if (!action) return;
       event.preventDefault();
       event.stopPropagation();
-      advanceDispatch(action);
+      event.stopImmediatePropagation();
+      void moveCardToDispatch(action);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -100,7 +137,7 @@ export default function WorkflowStagePatches() {
       const action = target.closest('[data-hajin-workflow-dispatch="true"]');
       if (!action) return;
       event.preventDefault();
-      advanceDispatch(action);
+      void moveCardToDispatch(action);
     };
 
     const observer = new MutationObserver(markDispatchActions);
