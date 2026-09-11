@@ -34,23 +34,25 @@ export default function DispatchInlineFields() {
       if (!image) return;
       const wrap = image.parentElement as HTMLElement | null;
       if (!wrap) return;
-      wrap.style.width = "60px";
-      wrap.style.height = "68px";
-      wrap.style.minWidth = "60px";
-      wrap.style.minHeight = "68px";
-      wrap.style.maxHeight = "68px";
-      wrap.style.flex = "0 0 60px";
+      wrap.style.width = "48px";
+      wrap.style.height = "54px";
+      wrap.style.minWidth = "48px";
+      wrap.style.minHeight = "54px";
+      wrap.style.maxHeight = "54px";
+      wrap.style.flex = "0 0 48px";
       wrap.style.alignSelf = "start";
       wrap.style.marginLeft = "auto";
       wrap.style.borderRadius = "14px";
       wrap.style.overflow = "hidden";
       const detailsRow = wrap.parentElement as HTMLElement | null;
       if (detailsRow) {
-        detailsRow.style.gridTemplateColumns = "max-content 60px";
-        detailsRow.style.justifyContent = "start";
+        detailsRow.style.gridTemplateColumns = "minmax(0, 1fr) 48px";
+        detailsRow.style.justifyContent = "stretch";
         detailsRow.style.gap = "12px";
         detailsRow.style.marginTop = "8px";
         detailsRow.style.alignItems = "center";
+        detailsRow.style.paddingLeft = "14px";
+        detailsRow.style.boxSizing = "border-box";
       }
       image.style.width = "100%";
       image.style.height = "100%";
@@ -58,12 +60,12 @@ export default function DispatchInlineFields() {
       image.style.objectFit = "cover";
       const plus = wrap.querySelector('[data-hajin-photo-add="true"]');
       if (plus instanceof HTMLElement) {
-        plus.style.width = "24px";
-        plus.style.height = "24px";
-        plus.style.minWidth = "24px";
-        plus.style.top = "5px";
-        plus.style.right = "5px";
-        plus.style.fontSize = "14px";
+        plus.style.width = "20px";
+        plus.style.height = "20px";
+        plus.style.minWidth = "20px";
+        plus.style.top = "4px";
+        plus.style.right = "4px";
+        plus.style.fontSize = "12px";
       }
       const badge = Array.from(wrap.querySelectorAll("span,div")).find((node) => node.textContent?.trim().startsWith("사진 ")) as HTMLElement | undefined;
       if (badge) {
@@ -369,6 +371,14 @@ export default function DispatchInlineFields() {
         } else {
           dateBold.insertAdjacentElement("afterend", control);
         }
+        window.requestAnimationFrame(() => {
+          const image = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
+          const detailsRow = image?.parentElement?.parentElement as HTMLElement | null;
+          if (!detailsRow || !timeWrap.isConnected) return;
+          const targetRight = timeWrap.getBoundingClientRect().right;
+          const rowLeft = detailsRow.getBoundingClientRect().left;
+          detailsRow.style.width = `${Math.max(210, Math.round(targetRight - rowLeft))}px`;
+        });
       }
     };
 
