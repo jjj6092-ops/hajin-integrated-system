@@ -723,18 +723,22 @@ export default function Page() {
       return null;
     }
 
-    // 모바일 환경에서 UPDATE 응답 본문이 비어도 저장은 완료될 수 있으므로,
-    // 별도 조회로 서버에 반영된 최신 값을 확인한다.
-    const { data, error: readError } = await supabase
-      .from("as_jobs")
-      .select("id,company,site,contact_phone,machine,issue,visit_note,worker,status,resolution,created_at")
-      .eq("id", jobId)
-      .maybeSingle();
-    if (readError || !data) {
-      say(`저장 후 내용을 확인하지 못했습니다: ${readError?.message || "데이터 없음"}`);
-      return null;
-    }
-    const next = toJob(data as JobRow);
+    // UPDATE가 성공하면 추가 조회를 기다리지 않고 입력값을 즉시 화면에 반영한다.
+    // 일부 모바일 통신 환경에서 저장 후 재조회 요청이 멈춰 버튼이 계속
+    // "저장 중"으로 남는 현상을 방지한다.
+    const next: Job = {
+      ...selected,
+      company: values.company.trim(),
+      site: values.site.trim(),
+      manager: values.manager.trim(),
+      phone: values.phone.trim(),
+      machine: values.machine.trim(),
+      issue: values.issue.trim(),
+      date: [values.date.trim(), values.time.trim()].filter(Boolean).join(" "),
+      worker: values.worker.trim(),
+      requiredEquipment: values.requiredEquipment.trim(),
+      specialNotes: values.specialNotes.trim(),
+    };
     setSelected(next);
     setJobs(current => current.map(job => job.dbId === next.dbId ? next : job));
     if (!silent) say("접수 내용을 수정했습니다");
@@ -2248,7 +2252,7 @@ function Detail({
               </div>
             </div>}
           </div>
-          <button type="button" onClick={()=>{ void saveEdits(); }} className={`relative z-10 w-full touch-manipulation rounded-2xl py-3.5 text-sm font-black text-white ${savingEdit?"bg-blue-600":"bg-slate-900"}`}>{savingEdit?"저장 중... (다시 누르면 잠금 해제)":"수정 내용 저장"}</button>
+          <button type="button" onClick={()=>{ void saveEdits(); }} className={`relative z-10 w-full touch-manipulation rounded-2xl py-3.5 text-sm font-black text-white ${savingEdit?"bg-blue-600":"bg-slate-900"}`}>{savingEdit?"저장 중...":"수정 내용 저장"}</button>
           <button type="button" onClick={()=>void deleteJob()} className="w-full rounded-2xl border border-rose-200 bg-rose-50 py-3 text-sm font-black text-rose-600">접수건 삭제</button>
         </div>
       </section>
