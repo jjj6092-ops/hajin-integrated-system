@@ -3,6 +3,7 @@ import "./globals.css";
 import PwaRegister from "./pwa-register";
 import GlobalUiPatches from "./global-ui-patches";
 import WorkflowStagePatches from "./workflow-stage-patches";
+import WorkflowPhotoUploadPatches from "./workflow-photo-upload-patches";
 
 export const metadata: Metadata = {
   title: "하진 A/S 관리",
@@ -41,6 +42,7 @@ export default function RootLayout({
         <PwaRegister />
         <GlobalUiPatches />
         <WorkflowStagePatches />
+        <WorkflowPhotoUploadPatches />
         {children}
       </body>
     </html>
