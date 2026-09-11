@@ -28,35 +28,56 @@ export default function DispatchInlineFields() {
       return null;
     };
 
+    const compactWorkPhoto = (card: HTMLElement) => {
+      const image = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
+      if (!image) return;
+      const wrap = image.parentElement as HTMLElement | null;
+      if (!wrap) return;
+      wrap.style.width = "132px";
+      wrap.style.height = "132px";
+      wrap.style.minWidth = "132px";
+      wrap.style.flex = "0 0 132px";
+      wrap.style.alignSelf = "start";
+      wrap.style.marginLeft = "auto";
+      wrap.style.borderRadius = "20px";
+      wrap.style.overflow = "hidden";
+      image.style.width = "100%";
+      image.style.height = "100%";
+      image.style.objectFit = "cover";
+      const plus = wrap.querySelector("button");
+      if (plus instanceof HTMLElement) {
+        plus.style.width = "42px";
+        plus.style.height = "42px";
+      }
+      const badge = Array.from(wrap.querySelectorAll("span,div")).find((node) => node.textContent?.trim().startsWith("사진 ")) as HTMLElement | undefined;
+      if (badge) {
+        badge.style.fontSize = "11px";
+        badge.style.padding = "4px 7px";
+      }
+    };
+
     const mergeWorkInfoBoxes = (card: HTMLElement) => {
       if (card.dataset.hajinWorkInfoMerged === "true") return;
-
       const labels = Array.from(card.querySelectorAll("span"));
       const requiredLabel = labels.find((node) => node.textContent?.trim() === "필요장비");
       const specialLabel = labels.find((node) => node.textContent?.trim() === "전달 및 특이사항");
       if (!requiredLabel || !specialLabel) return;
-
       const requiredBox = requiredLabel.parentElement as HTMLElement | null;
       const specialBox = specialLabel.parentElement as HTMLElement | null;
       const grid = requiredBox?.parentElement as HTMLElement | null;
       if (!requiredBox || !specialBox || !grid || specialBox.parentElement !== grid) return;
-
       const requiredValue = requiredBox.querySelector("b")?.textContent?.trim() || "";
       const specialValue = specialBox.querySelector("b")?.textContent?.trim() || "";
       const values = [requiredValue, specialValue].filter((value, index, list) => value && value !== "미입력" && list.indexOf(value) === index);
-
       const merged = document.createElement("div");
       merged.dataset.hajinWorkInfoBox = "true";
       merged.className = "min-h-[54px] rounded-xl bg-slate-50 p-2.5";
-
       const title = document.createElement("span");
       title.className = "block font-black text-slate-500";
       title.textContent = "작업내용 및 특이사항";
-
       const value = document.createElement("b");
       value.className = "mt-1 block break-words";
       value.textContent = values.length ? values.join(" · ") : "미입력";
-
       merged.append(title, value);
       grid.replaceChildren(merged);
       grid.className = "mt-3 grid grid-cols-1 gap-2 text-xs";
@@ -137,17 +158,16 @@ export default function DispatchInlineFields() {
         const card = findCard(mark);
         if (!card) continue;
 
+        compactWorkPhoto(card);
         mergeWorkInfoBoxes(card);
 
         if (card.dataset.hajinRevisitReady === "true") continue;
         card.dataset.hajinRevisitReady = "true";
-
         card.querySelectorAll('[data-hajin-dispatch-panel="true"]').forEach((node) => node.remove());
 
         const row = await resolveJob(card);
         if (!row) continue;
         const schedule = scheduleParts(String(row.visit_note || ""));
-
         const dateBold = Array.from(card.querySelectorAll("b")).find((node) => /\d{4}-\d{2}-\d{2}/.test(node.textContent || "")) as HTMLElement | undefined;
         if (!dateBold || card.querySelector('[data-hajin-revisit-control="true"]')) continue;
 
@@ -160,32 +180,32 @@ export default function DispatchInlineFields() {
         const dateInput = document.createElement("input");
         dateInput.type = "date";
         dateInput.value = schedule.date;
-        dateInput.setAttribute("aria-label", "재방문 날짜");
+        dateInput.setAttribute("aria-label", "방문 날짜");
         dateInput.className = "min-w-0 w-full rounded-xl border border-violet-200 bg-white px-2.5 py-2 text-[12px] font-black text-slate-700 outline-none focus:border-violet-500";
 
         const timeInput = document.createElement("input");
         timeInput.type = "time";
         timeInput.value = schedule.time;
         timeInput.step = "3600";
-        timeInput.setAttribute("aria-label", "재방문 시간");
+        timeInput.setAttribute("aria-label", "방문 시간");
         timeInput.className = "min-w-0 w-full rounded-xl border border-violet-200 bg-white px-2 py-2 text-[12px] font-black text-slate-700 outline-none focus:border-violet-500";
 
         const applyButton = document.createElement("button");
         applyButton.type = "button";
-        applyButton.textContent = "재방문예정";
+        applyButton.textContent = "방문일정수정";
         applyButton.className = "whitespace-nowrap rounded-xl bg-violet-600 px-3 py-2 text-[12px] font-black text-white shadow-sm active:scale-[0.98]";
 
         applyButton.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (!dateInput.value) { window.alert("재방문 날짜를 선택해주세요."); return; }
-          if (!timeInput.value) { window.alert("재방문 시간을 선택해주세요."); return; }
+          if (!dateInput.value) { window.alert("방문 날짜를 선택해주세요."); return; }
+          if (!timeInput.value) { window.alert("방문 시간을 선택해주세요."); return; }
 
           applyButton.disabled = true;
-          applyButton.textContent = "적용중";
+          applyButton.textContent = "수정중";
           try {
             const nextVisit = `${dateInput.value} ${timeInput.value}${schedule.suffix}`;
-            const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit, status: "재방문" }).eq("id", row.id);
+            const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit }).eq("id", row.id);
             if (error) throw error;
 
             try {
@@ -194,17 +214,16 @@ export default function DispatchInlineFields() {
               localStorage.setItem(WORKFLOW_KEY, JSON.stringify(all));
             } catch {}
 
-            row.status = "재방문";
             row.visit_note = nextVisit;
             const currentText = dateBold.textContent || "";
             dateBold.textContent = currentText
               .replace(/\d{4}-\d{2}-\d{2}/, dateInput.value)
               .replace(/\d{1,2}시(?:\d{1,2}분)?/, displayTime(timeInput.value));
-            applyButton.textContent = "적용완료";
-            window.setTimeout(() => { if (applyButton.isConnected) applyButton.textContent = "재방문예정"; }, 1200);
+            applyButton.textContent = "수정완료";
+            window.setTimeout(() => { if (applyButton.isConnected) applyButton.textContent = "방문일정수정"; }, 1200);
           } catch {
-            window.alert("재방문 일정 적용에 실패했습니다.");
-            applyButton.textContent = "재방문예정";
+            window.alert("방문 일정 수정에 실패했습니다.");
+            applyButton.textContent = "방문일정수정";
           } finally {
             applyButton.disabled = false;
           }
@@ -220,7 +239,6 @@ export default function DispatchInlineFields() {
     const observer = new MutationObserver(() => { void decorate(); });
     observer.observe(document.body, { childList: true, subtree: true });
     void decorate();
-
     return () => observer.disconnect();
   }, []);
 
