@@ -5,7 +5,7 @@ import { supabase } from "./supabase";
 
 export default function WorkflowPhotoUploadPatches() {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const targetFolderRef = useRef("");
+  const sourceRef = useRef<Element | null>(null);
   const uploadingRef = useRef(false);
 
   useEffect(() => {
@@ -34,9 +34,7 @@ export default function WorkflowPhotoUploadPatches() {
       let current: HTMLElement | null = start as HTMLElement;
       while (current && current !== document.body) {
         const text = current.innerText || "";
-        if (text.includes("출동기사") && text.includes("필요장비") && text.includes("전달 및 특이사항")) {
-          return current;
-        }
+        if (text.includes("출동기사") && text.includes("필요장비") && text.includes("전달 및 특이사항")) return current;
         current = current.parentElement;
       }
       return null;
@@ -74,23 +72,8 @@ export default function WorkflowPhotoUploadPatches() {
         if (date && cardText.includes(date)) score += 6;
         if (!best || score > best.score) best = { id: Number(row.id), score };
       }
-
-      if (!best || best.score < 8) return "";
+      if (!best || best.score < 6) return "";
       return `${best.id}/intake`;
-    };
-
-    const choosePhotos = async (source: Element) => {
-      if (uploadingRef.current) return;
-      const folder = await resolveFolderFromCard(source);
-      if (!folder) {
-        window.alert("사진을 추가할 A/S 접수건을 찾지 못했습니다. 접수 상세에서 사진을 추가해주세요.");
-        return;
-      }
-      targetFolderRef.current = folder;
-      if (inputRef.current) {
-        inputRef.current.value = "";
-        inputRef.current.click();
-      }
     };
 
     const markPhotoAreas = () => {
@@ -99,7 +82,6 @@ export default function WorkflowPhotoUploadPatches() {
         return ["접수", "출동", "작업완료", "정산완료"].includes(text || "") && visible(node as HTMLElement);
       });
       if (!heading) return;
-
       const root = heading.parentElement?.parentElement?.parentElement || document.body;
 
       Array.from(root.querySelectorAll('button[aria-label="접수사진 보기"]')).forEach((photoButton) => {
@@ -129,14 +111,20 @@ export default function WorkflowPhotoUploadPatches() {
     const handleClick = (event: MouseEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      const add = target.closest('[data-hajin-photo-add="true"]');
-      const empty = target.closest('[data-hajin-photo-empty="true"]');
-      const action = add || empty;
-      if (!action) return;
+      const action = target.closest('[data-hajin-photo-add="true"],[data-hajin-photo-empty="true"]');
+      if (!action || uploadingRef.current) return;
+
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      void choosePhotos(action);
+
+      // Android/Samsung browser blocks a file picker when click() happens after await.
+      // Open the picker immediately while we still have the user's tap gesture.
+      sourceRef.current = action;
+      if (inputRef.current) {
+        inputRef.current.value = "";
+        inputRef.current.click();
+      }
     };
 
     const observer = new MutationObserver(markPhotoAreas);
@@ -151,8 +139,8 @@ export default function WorkflowPhotoUploadPatches() {
   }, []);
 
   const uploadFiles = async (files: File[]) => {
-    const folder = targetFolderRef.current;
-    if (!folder || !files.length || uploadingRef.current) return;
+    const source = sourceRef.current;
+    if (!source || !files.length || uploadingRef.current) return;
     uploadingRef.current = true;
     try {
       const images = files.filter((file) => file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name));
@@ -160,6 +148,57 @@ export default function WorkflowPhotoUploadPatches() {
         window.alert("사진 파일을 선택해주세요.");
         return;
       }
+
+      // Resolve the target only after the native picker has opened.
+      const card = (() => {
+        let current: HTMLElement | null = source as HTMLElement;
+        while (current && current !== document.body) {
+          const text = current.innerText || "";
+          if (text.includes("출동기사") && text.includes("필요장비") && text.includes("전달 및 특이사항")) return current;
+          current = current.parentElement;
+        }
+        return null;
+      })();
+      if (!card) throw new Error("사진을 추가할 업무 카드를 찾지 못했습니다.");
+
+      const existingImage = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
+      let folder = "";
+      if (existingImage?.src) {
+        try {
+          const url = new URL(existingImage.src, window.location.origin);
+          const decoded = decodeURIComponent(url.pathname);
+          const marker = "/as-job-photos/";
+          const markerIndex = decoded.indexOf(marker);
+          if (markerIndex >= 0) {
+            const storagePath = decoded.slice(markerIndex + marker.length);
+            const slash = storagePath.lastIndexOf("/");
+            if (slash > 0) folder = storagePath.slice(0, slash);
+          }
+        } catch {}
+      }
+
+      if (!folder) {
+        const cardText = card.innerText || "";
+        const { data, error } = await supabase.from("as_jobs").select("id,company,site,worker,visit_note,created_at").order("created_at", { ascending: false }).limit(200);
+        if (error || !data?.length) throw new Error("A/S 접수건 조회에 실패했습니다.");
+        let best: { id: number; score: number } | null = null;
+        for (const row of data as Array<{ id: number; company?: string; site?: string; worker?: string; visit_note?: string }>) {
+          let score = 0;
+          const company = String(row.company || "").trim();
+          const site = String(row.site || "").trim();
+          const worker = String(row.worker || "").trim();
+          const visit = String(row.visit_note || "");
+          const date = visit.match(/\d{4}-\d{2}-\d{2}/)?.[0] || "";
+          if (company && cardText.includes(company)) score += 4;
+          if (site && cardText.includes(site)) score += 7;
+          if (worker && cardText.includes(worker)) score += 4;
+          if (date && cardText.includes(date)) score += 6;
+          if (!best || score > best.score) best = { id: Number(row.id), score };
+        }
+        if (!best || best.score < 6) throw new Error("사진을 추가할 A/S 접수건을 정확히 찾지 못했습니다.");
+        folder = `${best.id}/intake`;
+      }
+
       for (const [index, file] of images.entries()) {
         const safeName = (file.name || `photo-${index}.jpg`).replace(/[^a-zA-Z0-9._-]/g, "_");
         const path = `${folder}/${Date.now()}-${index}-${safeName}`;
@@ -172,7 +211,7 @@ export default function WorkflowPhotoUploadPatches() {
       window.alert(`사진 추가에 실패했습니다. ${error?.message || "다시 시도해주세요."}`);
     } finally {
       uploadingRef.current = false;
-      targetFolderRef.current = "";
+      sourceRef.current = null;
     }
   };
 
@@ -182,7 +221,7 @@ export default function WorkflowPhotoUploadPatches() {
       type="file"
       accept="image/*"
       multiple
-      className="sr-only"
+      style={{ position: "fixed", left: "-9999px", top: 0, width: 1, height: 1, opacity: 0 }}
       onChange={(event) => {
         const files = Array.from(event.currentTarget.files || []);
         void uploadFiles(files);
