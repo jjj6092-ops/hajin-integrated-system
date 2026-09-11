@@ -34,7 +34,8 @@ export default function WorkflowPhotoUploadPatches() {
       let current: HTMLElement | null = start as HTMLElement;
       while (current && current !== document.body) {
         const text = current.innerText || "";
-        if (text.includes("출동기사") && text.includes("필요장비") && text.includes("전달 및 특이사항")) return current;
+        const hasWorkInfo = (text.includes("필요장비") && text.includes("전달 및 특이사항")) || text.includes("작업내용 및 특이사항");
+        if (text.includes("출동기사") && hasWorkInfo) return current;
         current = current.parentElement;
       }
       return null;
