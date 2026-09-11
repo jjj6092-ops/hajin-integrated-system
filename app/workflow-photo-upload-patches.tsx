@@ -40,42 +40,6 @@ export default function WorkflowPhotoUploadPatches() {
       return null;
     };
 
-    const resolveFolderFromCard = async (start: Element) => {
-      const card = findWorkflowCard(start);
-      if (!card) return "";
-
-      const existingImage = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
-      if (existingImage?.src) {
-        const folder = extractPhotoFolder(existingImage.src);
-        if (folder) return folder;
-      }
-
-      const cardText = card.innerText || "";
-      const { data, error } = await supabase
-        .from("as_jobs")
-        .select("id,company,site,worker,visit_note,created_at")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (error || !data?.length) return "";
-
-      let best: { id: number; score: number } | null = null;
-      for (const row of data as Array<{ id: number; company?: string; site?: string; worker?: string; visit_note?: string }>) {
-        let score = 0;
-        const company = String(row.company || "").trim();
-        const site = String(row.site || "").trim();
-        const worker = String(row.worker || "").trim();
-        const visit = String(row.visit_note || "");
-        const date = visit.match(/\d{4}-\d{2}-\d{2}/)?.[0] || "";
-        if (company && cardText.includes(company)) score += 4;
-        if (site && cardText.includes(site)) score += 7;
-        if (worker && cardText.includes(worker)) score += 4;
-        if (date && cardText.includes(date)) score += 6;
-        if (!best || score > best.score) best = { id: Number(row.id), score };
-      }
-      if (!best || best.score < 6) return "";
-      return `${best.id}/intake`;
-    };
-
     const markPhotoAreas = () => {
       const heading = Array.from(document.querySelectorAll("h2")).find((node) => {
         const text = node.textContent?.trim();
@@ -118,8 +82,6 @@ export default function WorkflowPhotoUploadPatches() {
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      // Android/Samsung browser blocks a file picker when click() happens after await.
-      // Open the picker immediately while we still have the user's tap gesture.
       sourceRef.current = action;
       if (inputRef.current) {
         inputRef.current.value = "";
@@ -149,7 +111,6 @@ export default function WorkflowPhotoUploadPatches() {
         return;
       }
 
-      // Resolve the target only after the native picker has opened.
       const card = (() => {
         let current: HTMLElement | null = source as HTMLElement;
         while (current && current !== document.body) {
@@ -205,8 +166,32 @@ export default function WorkflowPhotoUploadPatches() {
         const { error } = await supabase.storage.from("as-job-photos").upload(path, file, { upsert: false });
         if (error) throw new Error(error.message);
       }
+
+      // Do not reload the whole SPA here. Reloading resets the in-app view to Home.
+      // Keep the user on the exact workflow screen and show an immediate local preview.
+      const previewUrl = URL.createObjectURL(images[0]);
+      const currentImage = card.querySelector('img[alt="접수사진"]') as HTMLImageElement | null;
+      if (currentImage) {
+        currentImage.src = previewUrl;
+      } else {
+        const emptyButton = card.querySelector('[data-hajin-photo-empty="true"]') as HTMLButtonElement | null;
+        if (emptyButton) {
+          emptyButton.textContent = "사진 추가됨";
+          emptyButton.style.backgroundImage = `url(${previewUrl})`;
+          emptyButton.style.backgroundSize = "cover";
+          emptyButton.style.backgroundPosition = "center";
+          emptyButton.style.color = "transparent";
+        }
+      }
+
+      const countBadge = Array.from(card.querySelectorAll("span,div,p")).find((node) => /^사진\s*\d+장$/.test(node.textContent?.trim() || ""));
+      if (countBadge) {
+        const current = Number(countBadge.textContent?.match(/\d+/)?.[0] || 0);
+        countBadge.textContent = `사진 ${current + images.length}장`;
+      }
+
+      window.dispatchEvent(new CustomEvent("hajin-photo-uploaded", { detail: { folder, count: images.length } }));
       window.alert(`접수사진 ${images.length}장이 추가되었습니다.`);
-      window.location.reload();
     } catch (error: any) {
       window.alert(`사진 추가에 실패했습니다. ${error?.message || "다시 시도해주세요."}`);
     } finally {
