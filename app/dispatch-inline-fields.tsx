@@ -33,27 +33,35 @@ export default function DispatchInlineFields() {
       if (!image) return;
       const wrap = image.parentElement as HTMLElement | null;
       if (!wrap) return;
-      wrap.style.width = "108px";
-      wrap.style.height = "128px";
-      wrap.style.minWidth = "108px";
-      wrap.style.flex = "0 0 108px";
+      wrap.style.width = "78px";
+      wrap.style.height = "88px";
+      wrap.style.minWidth = "78px";
+      wrap.style.minHeight = "88px";
+      wrap.style.maxHeight = "88px";
+      wrap.style.flex = "0 0 78px";
       wrap.style.alignSelf = "start";
       wrap.style.marginLeft = "auto";
-      wrap.style.borderRadius = "20px";
+      wrap.style.borderRadius = "14px";
       wrap.style.overflow = "hidden";
+      const detailsRow = wrap.parentElement as HTMLElement | null;
+      if (detailsRow) {
+        detailsRow.style.gridTemplateColumns = "minmax(0, 1fr) 78px";
+        detailsRow.style.gap = "10px";
+      }
       image.style.width = "100%";
       image.style.height = "100%";
+      image.style.minHeight = "0";
       image.style.objectFit = "cover";
       const plus = wrap.querySelector("button");
       if (plus instanceof HTMLElement) {
-        plus.style.width = "42px";
-        plus.style.height = "42px";
-        plus.style.minWidth = "42px";
+        plus.style.width = "30px";
+        plus.style.height = "30px";
+        plus.style.minWidth = "30px";
       }
       const badge = Array.from(wrap.querySelectorAll("span,div")).find((node) => node.textContent?.trim().startsWith("사진 ")) as HTMLElement | undefined;
       if (badge) {
-        badge.style.fontSize = "10px";
-        badge.style.padding = "3px 6px";
+        badge.style.fontSize = "9px";
+        badge.style.padding = "2px 5px";
       }
     };
 
@@ -80,8 +88,8 @@ export default function DispatchInlineFields() {
         block = block.parentElement;
       }
       if (!block || block === card) return;
-      block.style.marginTop = "22px";
-      block.style.marginBottom = "10px";
+      block.style.marginTop = "10px";
+      block.style.marginBottom = "6px";
     };
 
     const mergeWorkInfoBoxes = (card: HTMLElement) => {
