@@ -201,7 +201,7 @@ export default function DispatchInlineFields() {
         };
 
         const dateWrap = document.createElement("label");
-        dateWrap.className = "relative flex min-w-0 items-center gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-sm";
+        dateWrap.className = "relative flex min-w-0 items-center gap-2 overflow-hidden rounded-full border border-slate-200 bg-white px-3 shadow-sm";
         const dateText = document.createElement("span");
         dateText.className = "min-w-0 truncate text-[13px] font-black text-slate-800";
         dateText.textContent = schedule.date || "날짜 선택";
@@ -215,7 +215,7 @@ export default function DispatchInlineFields() {
         dateWrap.append(makeIcon("calendar"), dateText, dateInput);
 
         const timeWrap = document.createElement("label");
-        timeWrap.className = "relative flex min-w-0 items-center gap-1.5 overflow-hidden rounded-2xl border border-slate-200 bg-white px-2.5 py-3 shadow-sm";
+        timeWrap.className = "relative flex min-w-0 items-center gap-1.5 overflow-hidden rounded-full border border-slate-200 bg-white px-2.5 shadow-sm";
         const timeText = document.createElement("span");
         timeText.className = "min-w-0 truncate text-[13px] font-black text-slate-800";
         timeText.textContent = displayTime(schedule.time);
@@ -238,7 +238,12 @@ export default function DispatchInlineFields() {
         const applyButton = document.createElement("button");
         applyButton.type = "button";
         applyButton.textContent = "방문일정수정";
-        applyButton.className = "whitespace-nowrap rounded-2xl bg-blue-600 px-3 py-3 text-[12px] font-black text-white shadow-sm active:scale-[0.98] disabled:bg-blue-300";
+        applyButton.className = "whitespace-nowrap rounded-full bg-blue-600 px-3 text-[12px] font-black text-white shadow-sm active:scale-[0.98] disabled:bg-blue-300";
+        const statusHeight = Math.max(32, Math.round((mark as HTMLElement).getBoundingClientRect().height));
+        [dateWrap, timeWrap, applyButton].forEach((element) => {
+          element.style.height = `${statusHeight}px`;
+          element.style.minHeight = `${statusHeight}px`;
+        });
         applyButton.addEventListener("click", async (event) => {
           event.preventDefault(); event.stopPropagation();
           if (!dateInput.value) { window.alert("방문 날짜를 선택해주세요."); return; }
