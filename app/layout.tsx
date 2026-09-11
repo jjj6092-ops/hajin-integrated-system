@@ -5,6 +5,7 @@ import UniversalBackPatches from "./universal-back-patches";
 import GlobalUiPatches from "./global-ui-patches";
 import WorkflowStagePatches from "./workflow-stage-patches";
 import WorkflowPhotoUploadPatches from "./workflow-photo-upload-patches";
+import DispatchInlineFields from "./dispatch-inline-fields";
 import SaveGuardPatches from "./save-guard-patches";
 
 export const metadata: Metadata = {
@@ -46,6 +47,7 @@ export default function RootLayout({
         <GlobalUiPatches />
         <WorkflowStagePatches />
         <WorkflowPhotoUploadPatches />
+        <DispatchInlineFields />
         <SaveGuardPatches />
         {children}
       </body>
