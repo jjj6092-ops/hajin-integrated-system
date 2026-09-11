@@ -151,53 +151,38 @@ export default function DispatchInlineFields() {
         const dateBold = Array.from(card.querySelectorAll("b")).find((node) => /\d{4}-\d{2}-\d{2}/.test(node.textContent || "")) as HTMLElement | undefined;
         if (!dateBold || card.querySelector('[data-hajin-revisit-control="true"]')) continue;
 
-        const control = document.createElement("span");
+        const control = document.createElement("div");
         control.dataset.hajinRevisitControl = "true";
-        control.className = "ml-2 inline-flex flex-wrap items-center gap-1 align-middle";
+        control.className = "mt-2 grid w-full grid-cols-[minmax(0,1.35fr)_minmax(0,0.8fr)_auto] gap-2";
         control.addEventListener("click", (event) => event.stopPropagation());
         control.addEventListener("pointerdown", (event) => event.stopPropagation());
-
-        const label = document.createElement("label");
-        label.className = "inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2 py-1 text-[11px] font-black text-violet-700";
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.className = "size-3.5 accent-violet-600";
-        check.checked = String(row.status || "") === "재방문";
-        label.append(check, document.createTextNode("재방문"));
 
         const dateInput = document.createElement("input");
         dateInput.type = "date";
         dateInput.value = schedule.date;
-        dateInput.className = "hidden rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700";
+        dateInput.setAttribute("aria-label", "재방문 날짜");
+        dateInput.className = "min-w-0 w-full rounded-xl border border-violet-200 bg-white px-2.5 py-2 text-[12px] font-black text-slate-700 outline-none focus:border-violet-500";
 
         const timeInput = document.createElement("input");
         timeInput.type = "time";
         timeInput.value = schedule.time;
         timeInput.step = "3600";
-        timeInput.className = "hidden w-[88px] rounded-lg border border-violet-200 bg-white px-2 py-1 text-[11px] font-black text-slate-700";
+        timeInput.setAttribute("aria-label", "재방문 시간");
+        timeInput.className = "min-w-0 w-full rounded-xl border border-violet-200 bg-white px-2 py-2 text-[12px] font-black text-slate-700 outline-none focus:border-violet-500";
 
-        const saveButton = document.createElement("button");
-        saveButton.type = "button";
-        saveButton.textContent = "저장";
-        saveButton.className = "hidden rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-black text-white";
+        const applyButton = document.createElement("button");
+        applyButton.type = "button";
+        applyButton.textContent = "재방문예정";
+        applyButton.className = "whitespace-nowrap rounded-xl bg-violet-600 px-3 py-2 text-[12px] font-black text-white shadow-sm active:scale-[0.98]";
 
-        const toggleInputs = () => {
-          const show = check.checked;
-          dateInput.classList.toggle("hidden", !show);
-          timeInput.classList.toggle("hidden", !show);
-          saveButton.classList.toggle("hidden", !show);
-        };
-        toggleInputs();
-        check.addEventListener("change", toggleInputs);
-
-        saveButton.addEventListener("click", async (event) => {
+        applyButton.addEventListener("click", async (event) => {
           event.preventDefault();
           event.stopPropagation();
           if (!dateInput.value) { window.alert("재방문 날짜를 선택해주세요."); return; }
           if (!timeInput.value) { window.alert("재방문 시간을 선택해주세요."); return; }
 
-          saveButton.disabled = true;
-          saveButton.textContent = "저장중";
+          applyButton.disabled = true;
+          applyButton.textContent = "적용중";
           try {
             const nextVisit = `${dateInput.value} ${timeInput.value}${schedule.suffix}`;
             const { error } = await supabase.from("as_jobs").update({ visit_note: nextVisit, status: "재방문" }).eq("id", row.id);
@@ -215,18 +200,20 @@ export default function DispatchInlineFields() {
             dateBold.textContent = currentText
               .replace(/\d{4}-\d{2}-\d{2}/, dateInput.value)
               .replace(/\d{1,2}시(?:\d{1,2}분)?/, displayTime(timeInput.value));
-            saveButton.textContent = "저장됨";
-            window.setTimeout(() => { if (saveButton.isConnected) saveButton.textContent = "저장"; }, 1200);
+            applyButton.textContent = "적용완료";
+            window.setTimeout(() => { if (applyButton.isConnected) applyButton.textContent = "재방문예정"; }, 1200);
           } catch {
-            window.alert("재방문 일정 저장에 실패했습니다.");
-            saveButton.textContent = "저장";
+            window.alert("재방문 일정 적용에 실패했습니다.");
+            applyButton.textContent = "재방문예정";
           } finally {
-            saveButton.disabled = false;
+            applyButton.disabled = false;
           }
         });
 
-        control.append(label, dateInput, timeInput, saveButton);
-        dateBold.insertAdjacentElement("afterend", control);
+        control.append(dateInput, timeInput, applyButton);
+        const dateRow = dateBold.parentElement;
+        if (dateRow) dateRow.insertAdjacentElement("afterend", control);
+        else dateBold.insertAdjacentElement("afterend", control);
       }
     };
 
