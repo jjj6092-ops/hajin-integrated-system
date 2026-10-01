@@ -13,6 +13,7 @@ RUN npm install --omit=dev
 COPY --from=build /app/dist/client ./dist/client
 COPY --from=build /app/server.mjs ./server.mjs
 RUN test -f /app/dist/client/index.html
+RUN mkdir -p /app/data/uploads && chown -R 1000:1000 /app/data
 ENV NODE_ENV=production
 EXPOSE 3000
 CMD ["node", "server.mjs"]
