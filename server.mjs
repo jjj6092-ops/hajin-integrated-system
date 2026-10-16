@@ -18,7 +18,7 @@ const sessions=new Map();
 const hash=v=>createHash("sha256").update(v).digest();
 const cookies=req=>Object.fromEntries((req.headers.cookie||"").split(";").filter(Boolean).map(v=>v.trim().split(/=(.*)/s).slice(0,2).map(decodeURIComponent)));
 const userFor=req=>{const t=cookies(req).hajin_session;return t&&sessions.has(t)?sessions.get(t):null;};
-const json=(res,status,data,headers={})=>{res.writeHead(status,{"Content-Type":"application/json; charset=utf-8",...headers});res.end(JSON.stringify(data));};
+const json=(res,status,data,headers={})=>{res.writeHead(status,{"Content-Type":"application/json; charset=utf-8","Cache-Control":"no-store",...headers});res.end(JSON.stringify(data));};
 const body=req=>new Promise((resolve,reject)=>{let chunks=[];let n=0;req.on("data",c=>{n+=c.length;if(n>25*1024*1024){reject(new Error("파일은 25MB 이하만 저장할 수 있습니다."));req.destroy();}else chunks.push(c);});req.on("end",()=>resolve(Buffer.concat(chunks)));req.on("error",reject);});
 const readDb=()=>{try{return JSON.parse(readFileSync(dbFile,"utf8"));}catch{return {as_jobs:[],business_documents:[]};}};
 const writeDb=db=>{const tmp=`${dbFile}.tmp`;writeFileSync(tmp,JSON.stringify(db,null,2));writeFileSync(dbFile,readFileSync(tmp));unlinkSync(tmp);};
@@ -28,6 +28,8 @@ function multipartFile(buf,contentType){const m=/boundary=(.+)$/.exec(contentTyp
 
 const server=http.createServer(async(req,res)=>{try{
  const url=new URL(req.url||"/","http://local");
+ if((url.pathname==='/'||url.pathname==='/index.html'||url.pathname==='/office')&&['GET','HEAD'].includes(req.method)){res.writeHead(302,{'Location':'/office/','Cache-Control':'no-store'});return res.end();}
+ if((url.pathname==='/as'||url.pathname==='/as/')&&!userFor(req)){res.writeHead(302,{'Location':'/office/#as','Cache-Control':'no-store'});return res.end();}
  if(url.pathname==="/api/health"&&req.method==="GET")return json(res,200,{ok:true,storage:"file",dataDir,dbFileExists:existsSync(dbFile)});
  if(url.pathname==="/api/session"&&req.method==="GET")return json(res,200,{user:userFor(req)});
  if(url.pathname==="/api/login"&&req.method==="POST"){
@@ -119,6 +121,13 @@ const server=http.createServer(async(req,res)=>{try{
  }
  if(url.pathname.startsWith("/api/"))return json(res,404,{error:"없는 기능입니다."});
 
+ if((url.pathname==='/office/'||url.pathname.startsWith('/office/'))&&['GET','HEAD'].includes(req.method)){
+  const relative=url.pathname==='/office/'?'office/index.html':decodeURIComponent(url.pathname).slice(1);
+  const file=normalize(join(publicDir,relative));
+  if(!file.startsWith(join(publicDir,'office')+'/')||!existsSync(file)||statSync(file).isDirectory())return json(res,404,{error:'파일을 찾을 수 없습니다.'});
+  res.writeHead(200,{'Content-Type':mime[extname(file)]||'application/octet-stream','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});
+  if(req.method==='HEAD')return res.end();return createReadStream(file).pipe(res);
+ }
  const clean=normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/g,"");
  let file=join(publicDir,clean==="/"?"index.html":clean);
  if(!file.startsWith(publicDir)||!existsSync(file)||statSync(file).isDirectory())file=join(publicDir,"index.html");

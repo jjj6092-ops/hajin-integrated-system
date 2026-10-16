@@ -451,17 +451,6 @@ export default function Page() {
     } = supabase.auth.onAuthStateChange((event, session) => {
       clearTimeout(timer);
       setInitError("");
-      if (
-        event === "INITIAL_SESSION" &&
-        session &&
-        localStorage.getItem("hajin-auto-login") !== "true" &&
-        sessionStorage.getItem("hajin-session-active") !== "true"
-      ) {
-        void supabase.auth.signOut();
-        setUser(null);
-        setAuthReady(true);
-        return;
-      }
       setUser(session?.user ?? null);
       setAuthReady(true);
     });
@@ -791,13 +780,14 @@ export default function Page() {
   };
   if (!authReady || !dataReady) return <AuthLoading />;
   if (initError) return <ConnectionError message={initError} />;
-  if (!user) return <Login />;
+  if (!user) return <OfficeSignInRedirect />;
   if (!profile?.active)
     return <PendingAccount id={user.email?.split("@")[0] ?? "직원"} />;
   const staffName = profile.display_name || profile.employee_id;
   const notificationCount = notificationJobsOf(jobs).filter(job => !readNotifications.includes(notificationKeyOf(job))).length;
   return (
     <main className="min-h-screen bg-[#eaf0f6] text-slate-900">
+      <div className="mx-auto max-w-md px-5 py-2 text-xs text-slate-500"><a href="/office/#overview" className="underline">← 하진 통합 오피스</a></div>
       <div className={`mx-auto min-h-screen bg-[#f8fafc] shadow-2xl ${view === "calendar" ? "max-w-3xl" : "max-w-md"}`}>
         {view !== "calendar" && <header className="sticky top-0 z-20 flex h-[72px] items-center justify-between border-b border-slate-100 bg-white/95 px-5 backdrop-blur">
           <div className="flex items-center gap-3">
@@ -2817,4 +2807,9 @@ function Nav({ view, setView }: { view: View; setView: (v: View) => void }) {
       ))}
     </nav>
   );
+}
+
+function OfficeSignInRedirect() {
+  useEffect(() => { window.location.replace('/office/#as'); }, []);
+  return <main className="p-8 text-center text-sm text-slate-500">홈페이지 로그인으로 이동합니다. <a href="/office/#as" className="underline">직원 로그인</a></main>;
 }
