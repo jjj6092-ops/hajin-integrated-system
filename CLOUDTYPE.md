@@ -32,3 +32,9 @@ npm start
 - GitHub Pages는 공개 회사 소개 페이지로 유지할 수 있지만 직원 로그인/업무 화면은 이 Cloudtype 서버의 `/office/`에서 사용해야 같은 세션을 공유합니다.
 
 로그인 성공 직후에는 진입 경로와 관계없이 종합 대시보드(`#overview`)를 먼저 표시합니다. AS는 로그인 후 메뉴에서 선택합니다.
+
+## 배포 진단
+
+`/api/version`이 `hajin-office-home-v3`를 반환하면 홈페이지·AS 경로 분리 버전입니다. 기본 앱 경로 `/`는 회사 홈페이지이며 `/as`에서만 AS 화면을 제공합니다.
+
+GitHub Actions는 공개 저장소를 HTTPS로 가져오므로 별도 GHP_TOKEN/배포 키 등록 단계를 사용하지 않습니다. 저장소 Actions secret `CLOUDTYPE_TOKEN`은 필요합니다. 배포는 선택한 커밋 SHA로 고정됩니다. GitHub Actions 성공과 Cloudtype 빌드·서비스 정상 응답은 별도로 확인해야 합니다.

@@ -30,6 +30,7 @@ const server=http.createServer(async(req,res)=>{try{
  const url=new URL(req.url||"/","http://local");
  if((url.pathname==='/'||url.pathname==='/index.html'||url.pathname==='/office')&&['GET','HEAD'].includes(req.method)){res.writeHead(302,{'Location':'/office/','Cache-Control':'no-store'});return res.end();}
  if((url.pathname==='/as'||url.pathname==='/as/')&&!userFor(req)){res.writeHead(302,{'Location':'/office/#overview','Cache-Control':'no-store'});return res.end();}
+ if(url.pathname==='/api/version'&&req.method==='GET')return json(res,200,{version:'hajin-office-home-v3',home:'/office/',dashboard:'/office/#overview',as:'/as'});
  if(url.pathname==="/api/health"&&req.method==="GET")return json(res,200,{ok:true,storage:"file",dataDir,dbFileExists:existsSync(dbFile)});
  if(url.pathname==="/api/session"&&req.method==="GET")return json(res,200,{user:userFor(req)});
  if(url.pathname==="/api/login"&&req.method==="POST"){
@@ -129,7 +130,7 @@ const server=http.createServer(async(req,res)=>{try{
   if(req.method==='HEAD')return res.end();return createReadStream(file).pipe(res);
  }
  const clean=normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/g,"");
- let file=join(publicDir,clean==="/"?"index.html":clean);
+ let file=join(publicDir,(clean==="/as"||clean==="/as/")?"as.html":clean==="/"?"index.html":clean);
  if(!file.startsWith(publicDir)||!existsSync(file)||statSync(file).isDirectory())file=join(publicDir,"index.html");
  res.writeHead(200,{"Content-Type":mime[extname(file)]||"application/octet-stream","Cache-Control":extname(file)===".html"?"no-cache":"public, max-age=31536000, immutable"});
  createReadStream(file).pipe(res);

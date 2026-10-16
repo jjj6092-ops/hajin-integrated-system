@@ -15,14 +15,16 @@ test('homepage and AS share the server session without exposing existing data',a
  await writeFile(join(dataDir,'hajin-data.json'),seed);
  await mkdir(join(temp,'dist/client/office'),{recursive:true});
  await writeFile(join(temp,'dist/client/office/index.html'),'<h1>회사 홈페이지</h1>');
- await writeFile(join(temp,'dist/client/index.html'),'<h1>기존 AS 앱</h1>');
+ await writeFile(join(temp,'dist/client/index.html'),'<h1>회사 홈페이지 진입</h1>');
+ await writeFile(join(temp,'dist/client/as.html'),'<h1>기존 AS 앱</h1>');
  const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));const port=listener.address().port;await new Promise(r=>listener.close(r));
  const password=randomBytes(24).toString('hex');
  const child=spawn(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{cwd:temp,env:{...process.env,PORT:String(port),ADMIN_ID:'session-test',ADMIN_PASSWORD:password,DATA_DIR:dataDir},stdio:['ignore','pipe','pipe']});
  try{
  await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('server startup timeout')),10000);child.once('exit',code=>{clearTimeout(timeout);reject(Error('server exited '+code));});child.stdout.once('data',()=>{clearTimeout(timeout);resolve();});});
  const request=(p,options={})=>fetch(`http://127.0.0.1:${port}${p}`,{redirect:'manual',...options});
- let r=await request('/');assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/office/');
+ let r=await request('/api/version');assert.equal((await r.json()).version,'hajin-office-home-v3');
+ r=await request('/');assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/office/');
  r=await request('/office/');assert.equal(r.status,200);assert.match(await r.text(),/회사 홈페이지/);
  r=await request('/as');assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/office/#overview');
  r=await request('/api/data',{method:'POST',body:JSON.stringify({table:'as_jobs'})});assert.equal(r.status,401);

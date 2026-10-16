@@ -1,6 +1,7 @@
 name: Deploy to cloudtype
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,13 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      - name: Connect deploy key
-        uses: cloudtype-github-actions/connect@v1
-        with:
-          token: ${{ secrets.CLOUDTYPE_TOKEN }}
-          ghtoken: ${{ secrets.GHP_TOKEN }}
+      - name: Verify Cloudtype deployment credential
+        env:
+          CLOUDTYPE_TOKEN: ${{ secrets.CLOUDTYPE_TOKEN }}
+        run: |
+          if [ -z "$CLOUDTYPE_TOKEN" ]; then
+            echo "::error::CLOUDTYPE_TOKEN is missing. Add the Cloudtype access token in repository Actions secrets."
+            exit 1
+          fi
 
       - name: Deploy
         uses: cloudtype-github-actions/deploy@v1
@@ -40,5 +44,5 @@ jobs:
               args: []
               context:
                 git:
-                  url: git@github.com:${{ github.repository }}.git
-                  ref: ${{ github.ref }}
+                  url: https://github.com/${{ github.repository }}.git
+                  ref: ${{ github.sha }}
