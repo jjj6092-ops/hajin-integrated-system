@@ -2810,6 +2810,6 @@ function Nav({ view, setView }: { view: View; setView: (v: View) => void }) {
 }
 
 function OfficeSignInRedirect() {
-  useEffect(() => { window.location.replace('/office/#as'); }, []);
-  return <main className="p-8 text-center text-sm text-slate-500">홈페이지 로그인으로 이동합니다. <a href="/office/#as" className="underline">직원 로그인</a></main>;
+  useEffect(() => { window.location.replace('/office/#overview'); }, []);
+  return <main className="p-8 text-center text-sm text-slate-500">홈페이지 로그인으로 이동합니다. <a href="/office/#overview" className="underline">직원 로그인</a></main>;
 }

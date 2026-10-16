@@ -29,7 +29,7 @@ function multipartFile(buf,contentType){const m=/boundary=(.+)$/.exec(contentTyp
 const server=http.createServer(async(req,res)=>{try{
  const url=new URL(req.url||"/","http://local");
  if((url.pathname==='/'||url.pathname==='/index.html'||url.pathname==='/office')&&['GET','HEAD'].includes(req.method)){res.writeHead(302,{'Location':'/office/','Cache-Control':'no-store'});return res.end();}
- if((url.pathname==='/as'||url.pathname==='/as/')&&!userFor(req)){res.writeHead(302,{'Location':'/office/#as','Cache-Control':'no-store'});return res.end();}
+ if((url.pathname==='/as'||url.pathname==='/as/')&&!userFor(req)){res.writeHead(302,{'Location':'/office/#overview','Cache-Control':'no-store'});return res.end();}
  if(url.pathname==="/api/health"&&req.method==="GET")return json(res,200,{ok:true,storage:"file",dataDir,dbFileExists:existsSync(dbFile)});
  if(url.pathname==="/api/session"&&req.method==="GET")return json(res,200,{user:userFor(req)});
  if(url.pathname==="/api/login"&&req.method==="POST"){

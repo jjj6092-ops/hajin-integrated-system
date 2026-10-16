@@ -24,7 +24,7 @@ test('homepage and AS share the server session without exposing existing data',a
  const request=(p,options={})=>fetch(`http://127.0.0.1:${port}${p}`,{redirect:'manual',...options});
  let r=await request('/');assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/office/');
  r=await request('/office/');assert.equal(r.status,200);assert.match(await r.text(),/회사 홈페이지/);
- r=await request('/as');assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/office/#as');
+ r=await request('/as');assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/office/#overview');
  r=await request('/api/data',{method:'POST',body:JSON.stringify({table:'as_jobs'})});assert.equal(r.status,401);
  r=await request('/api/login',{method:'POST',body:JSON.stringify({email:'session-test',password:'wrong'})});assert.equal(r.status,401);
  r=await request('/api/login',{method:'POST',body:JSON.stringify({email:'session-test',password})});assert.equal(r.status,200);
