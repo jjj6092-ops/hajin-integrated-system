@@ -12,6 +12,7 @@ COPY package.json ./package.json
 RUN npm install --omit=dev
 COPY --from=build /app/dist/client ./dist/client
 COPY --from=build /app/server.mjs ./server.mjs
+COPY --from=build /app/ecount.mjs ./ecount.mjs
 RUN test -f /app/dist/client/index.html
 RUN mkdir -p /app/data/uploads && chown -R 1000:1000 /app/data
 ENV NODE_ENV=production

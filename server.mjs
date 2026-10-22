@@ -1,3 +1,4 @@
+import { createEcountClient, inventoryFilters, EcountError } from "./ecount.mjs";
 import http from "node:http";
 import { createReadStream, existsSync, statSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from "node:fs";
 import { extname, join, normalize, dirname } from "node:path";
@@ -14,6 +15,7 @@ const dbFile=join(dataDir,"hajin-data.json");
 mkdirSync(uploadDir,{recursive:true});
 if(!existsSync(dbFile)) writeFileSync(dbFile,JSON.stringify({as_jobs:[],business_documents:[]},null,2));
 
+const ecount=createEcountClient();
 const sessions=new Map();
 const hash=v=>createHash("sha256").update(v).digest();
 const cookies=req=>Object.fromEntries((req.headers.cookie||"").split(";").filter(Boolean).map(v=>v.trim().split(/=(.*)/s).slice(0,2).map(decodeURIComponent)));
@@ -46,6 +48,12 @@ const server=http.createServer(async(req,res)=>{try{
   return json(res,200,{ok:true},{"Set-Cookie":"hajin_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0"});
  }
  if(url.pathname.startsWith("/api/")&&!userFor(req))return json(res,401,{error:"로그인이 필요합니다."});
+
+ if(url.pathname==='/api/ecount/status'&&req.method==='GET')return json(res,200,ecount.configuration());
+ if(url.pathname==='/api/ecount/inventory'&&req.method==='GET'){
+  try{return json(res,200,await ecount.inventory(inventoryFilters(url.searchParams)));}
+  catch(error){return json(res,error instanceof EcountError?error.status:502,{error:error instanceof EcountError?error.message:'재고 조회를 처리하지 못했습니다.'});}
+ }
 
  if(url.pathname==="/api/migrate"&&req.method==="POST"){
   const d=JSON.parse((await body(req)).toString()||"{}");
